@@ -27,11 +27,14 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       
-      - name: Clear npm cache
-        run: npm cache clean --force
+      - name: Install stable npm
+        run: npm install -g npm@10.8.2
+      
+      - name: Remove package-lock
+        run: rm -f package-lock.json
         
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm install --prefer-offline --no-audit --legacy-peer-deps
       
       - name: Compile TypeScript
         run: npm run compile
