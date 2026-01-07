@@ -9,11 +9,19 @@ export interface AIResponse {
 export class AIService {
     async callLanguageModel(prompt: string, systemPrompt?: string): Promise<AIResponse> {
         try {
-            // Select Claude Sonnet 4.5 model
-            const [model] = await vscode.lm.selectChatModels({ 
-                vendor: 'copilot', 
-                family: 'claude-sonnet' 
+            // Try to get available Copilot models
+            const models = await vscode.lm.selectChatModels({ 
+                vendor: 'copilot'
             });
+
+            if (models.length === 0) {
+                throw new Error('No Copilot model available. Please ensure GitHub Copilot is installed and activated.');
+            }
+
+            // Prefer Claude Sonnet if available, otherwise use first available model
+            const model = models.find(m => m.family.includes('claude')) || models[0];
+            
+            logger.info(`Using model: ${model.id} (family: ${model.family})`);
 
             if (!model) {
                 throw new Error('No Copilot model available. Please ensure GitHub Copilot is installed and activated.');
