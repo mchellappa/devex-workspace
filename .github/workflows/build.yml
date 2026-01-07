@@ -42,14 +42,28 @@ jobs:
         continue-on-error: true
         if: false  # Skip tests until test files are created
       
-      - name: Package extension (dry run)
+      - name: Get version from package.json
+        id: package_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extension version: $VERSION"
+      
+      - name: Package extension
         run: |
           npm install -g @vscode/vsce
-          vsce package --allow-missing-repository --baseContentUrl . --out test-build.vsix
+          vsce package --allow-missing-repository --baseContentUrl . --out devex-ai-assistant-${{ steps.package_version.outputs.version }}.vsix
       
-      - name: Upload build artifact
+      - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
-          name: extension-build
-          path: test-build.vsix
+          name: devex-ai-assistant-${{ steps.package_version.outputs.version }}
+          path: devex-ai-assistant-${{ steps.package_version.outputs.version }}.vsix
+          retention-days: 7
+      
+      - name: Upload examples folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: examples-${{ steps.package_version.outputs.version }}
+          path: examples/
           retention-days: 7
