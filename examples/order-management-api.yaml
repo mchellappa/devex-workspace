@@ -1,0 +1,545 @@
+openapi: 3.0.3
+info:
+  title: Order Management Service API
+  description: |
+    RESTful API for managing customer orders in our e-commerce platform.
+    
+    This service handles the complete order lifecycle including:
+    - Order creation and management
+    - Order status tracking
+    - Order history and reporting
+    
+    **Authentication**: All endpoints require JWT Bearer token.
+  version: 1.0.0
+  contact:
+    name: Backend Team
+    email: backend-team@company.com
+
+servers:
+  - url: https://api.company.com/v1
+    description: Production
+  - url: https://api-staging.company.com/v1
+    description: Staging
+  - url: http://localhost:8080/api
+    description: Local development
+
+tags:
+  - name: Orders
+    description: Order management operations
+  - name: Order Status
+    description: Order status tracking
+
+paths:
+  /orders:
+    get:
+      tags:
+        - Orders
+      summary: List all orders
+      description: Retrieve a paginated list of orders. Customers see only their orders. Admins see all.
+      operationId: listOrders
+      parameters:
+        - name: page
+          in: query
+          description: Page number (0-indexed)
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+        - name: size
+          in: query
+          description: Page size
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: status
+          in: query
+          description: Filter by order status
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, CONFIRMED, SHIPPED, DELIVERED, CANCELLED]
+        - name: customerId
+          in: query
+          description: Filter by customer ID (admin only)
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Order'
+                  page:
+                    type: integer
+                  size:
+                    type: integer
+                  totalElements:
+                    type: integer
+                  totalPages:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      security:
+        - bearerAuth: []
+    
+    post:
+      tags:
+        - Orders
+      summary: Create a new order
+      description: Create a new order with items. Payment is processed synchronously.
+      operationId: createOrder
+      requestBody:
+        description: Order to create
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: Order created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '402':
+          description: Payment failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Product out of stock
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+
+  /orders/{orderId}:
+    get:
+      tags:
+        - Orders
+      summary: Get order by ID
+      description: Retrieve detailed information about a specific order
+      operationId: getOrderById
+      parameters:
+        - name: orderId
+          in: path
+          description: Order ID
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+    
+    put:
+      tags:
+        - Orders
+      summary: Update order
+      description: Update order details (admin only). Limited fields can be updated.
+      operationId: updateOrder
+      parameters:
+        - name: orderId
+          in: path
+          description: Order ID
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        description: Order updates
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrderRequest'
+      responses:
+        '200':
+          description: Order updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+    
+    delete:
+      tags:
+        - Orders
+      summary: Cancel order
+      description: Cancel an order. Only PENDING or CONFIRMED orders can be cancelled.
+      operationId: cancelOrder
+      parameters:
+        - name: orderId
+          in: path
+          description: Order ID
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Order cancelled successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Order cannot be cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      security:
+        - bearerAuth: []
+
+  /orders/{orderId}/status:
+    get:
+      tags:
+        - Order Status
+      summary: Get order status
+      description: Get the current status of an order
+      operationId: getOrderStatus
+      parameters:
+        - name: orderId
+          in: path
+          description: Order ID
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+    
+    put:
+      tags:
+        - Order Status
+      summary: Update order status
+      description: Update the status of an order (admin/system only)
+      operationId: updateOrderStatus
+      parameters:
+        - name: orderId
+          in: path
+          description: Order ID
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        description: New status
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrderStatusRequest'
+      responses:
+        '200':
+          description: Status updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderStatus'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+components:
+  schemas:
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique order identifier
+          example: 12345
+        customerId:
+          type: string
+          description: Customer identifier
+          example: CUST123456
+        status:
+          type: string
+          enum: [PENDING, CONFIRMED, SHIPPED, DELIVERED, CANCELLED]
+          description: Current order status
+          example: CONFIRMED
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        totalAmount:
+          type: number
+          format: double
+          description: Total order amount
+          example: 109.97
+        createdAt:
+          type: string
+          format: date-time
+          description: Order creation timestamp
+          example: '2025-01-15T10:30:00Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: '2025-01-15T11:00:00Z'
+        shippingAddress:
+          type: string
+          description: Delivery address
+          example: '123 Main St, City, State 12345'
+        paymentMethod:
+          type: string
+          description: Payment method used
+          example: CREDIT_CARD
+      required:
+        - id
+        - customerId
+        - status
+        - items
+        - totalAmount
+        - createdAt
+        - shippingAddress
+        - paymentMethod
+
+    OrderItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        productId:
+          type: string
+          description: Product identifier
+          example: PROD001
+        quantity:
+          type: integer
+          minimum: 1
+          example: 2
+        unitPrice:
+          type: number
+          format: double
+          example: 29.99
+        subtotal:
+          type: number
+          format: double
+          description: Quantity * unit price
+          example: 59.98
+      required:
+        - productId
+        - quantity
+        - unitPrice
+        - subtotal
+
+    CreateOrderRequest:
+      type: object
+      properties:
+        customerId:
+          type: string
+          description: Customer identifier
+          example: CUST123456
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/CreateOrderItemRequest'
+        shippingAddress:
+          type: string
+          description: Delivery address
+          example: '123 Main St, City, State 12345'
+        paymentMethod:
+          type: string
+          enum: [CREDIT_CARD, DEBIT_CARD, PAYPAL, BANK_TRANSFER]
+          example: CREDIT_CARD
+      required:
+        - customerId
+        - items
+        - shippingAddress
+        - paymentMethod
+
+    CreateOrderItemRequest:
+      type: object
+      properties:
+        productId:
+          type: string
+          example: PROD001
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 100
+          example: 2
+        unitPrice:
+          type: number
+          format: double
+          minimum: 0
+          example: 29.99
+      required:
+        - productId
+        - quantity
+        - unitPrice
+
+    UpdateOrderRequest:
+      type: object
+      properties:
+        shippingAddress:
+          type: string
+          description: Updated delivery address
+          example: '456 Oak Ave, Town, State 67890'
+
+    OrderStatus:
+      type: object
+      properties:
+        orderId:
+          type: integer
+          format: int64
+          example: 12345
+        status:
+          type: string
+          enum: [PENDING, CONFIRMED, SHIPPED, DELIVERED, CANCELLED]
+          example: SHIPPED
+        statusUpdatedAt:
+          type: string
+          format: date-time
+          example: '2025-01-16T09:00:00Z'
+        trackingNumber:
+          type: string
+          description: Shipping tracking number (if shipped)
+          example: TRACK123456789
+      required:
+        - orderId
+        - status
+        - statusUpdatedAt
+
+    UpdateOrderStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [PENDING, CONFIRMED, SHIPPED, DELIVERED, CANCELLED]
+          example: SHIPPED
+        trackingNumber:
+          type: string
+          description: Required when status is SHIPPED
+          example: TRACK123456789
+      required:
+        - status
+
+    Error:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          example: '2025-01-15T10:30:00Z'
+        status:
+          type: integer
+          example: 400
+        error:
+          type: string
+          example: Bad Request
+        code:
+          type: string
+          description: Application-specific error code
+          example: ORD001
+        message:
+          type: string
+          example: Invalid customer ID provided
+        path:
+          type: string
+          example: /api/orders
+      required:
+        - timestamp
+        - status
+        - error
+        - message
+        - path
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    Unauthorized:
+      description: Unauthorized - missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    Forbidden:
+      description: Forbidden - insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from authentication service

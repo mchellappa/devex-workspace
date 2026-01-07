@@ -1,0 +1,80 @@
+name: Manual Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.0.1)'
+        required: true
+        type: string
+      create_release:
+        description: 'Create GitHub Release?'
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  manual-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Update version in package.json
+        run: npm version ${{ inputs.version }} --no-git-tag-version
+      
+      - name: Compile TypeScript
+        run: npm run compile
+      
+      - name: Install vsce
+        run: npm install -g @vscode/vsce
+      
+      - name: Package extension
+        run: vsce package
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: devex-ai-assistant-${{ inputs.version }}
+          path: ./devex-ai-assistant-${{ inputs.version }}.vsix
+          retention-days: 90
+      
+      - name: Create Release (if selected)
+        if: inputs.create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ inputs.version }}
+          release_name: DevEx AI Assistant v${{ inputs.version }}
+          body: |
+            ## Manual Release v${{ inputs.version }}
+            
+            Built manually via GitHub Actions workflow.
+            
+            ### Installation
+            1. Download the `.vsix` file from Artifacts
+            2. Install in VS Code: Extensions → ... → Install from VSIX
+            
+            See CHANGELOG.md for details.
+          draft: true
+          prerelease: false
+      
+      - name: Summary
+        run: |
+          echo "### Build Complete! ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**File:** devex-ai-assistant-${{ inputs.version }}.vsix" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download from Artifacts tab above." >> $GITHUB_STEP_SUMMARY

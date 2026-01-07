@@ -1,0 +1,32 @@
+package {{packageName}}.controller;
+
+import {{packageName}}.service.{{serviceName}};
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import javax.validation.Valid;
+
+@RestController
+@RequestMapping("/{{resourceName}}")
+@Tag(name = "{{className}}", description = "{{resourceName}} management APIs")
+public class {{className}} {
+
+    private final {{serviceName}} {{#camelCase}}{{serviceName}}{{/camelCase}};
+
+    @Autowired
+    public {{className}}({{serviceName}} {{#camelCase}}{{serviceName}}{{/camelCase}}) {
+        this.{{#camelCase}}{{serviceName}}{{/camelCase}} = {{#camelCase}}{{serviceName}}{{/camelCase}};
+    }
+
+    {{#each endpoints}}
+    @{{method}}Mapping("{{path}}")
+    @Operation(summary = "{{summary}}")
+    public ResponseEntity<?> {{operationId}}() {
+        // TODO: Implement {{operationId}}
+        return ResponseEntity.ok().build();
+    }
+
+    {{/each}}
+}

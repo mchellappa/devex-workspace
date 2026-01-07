@@ -1,0 +1,155 @@
+{
+  "name": "devex-ai-assistant",
+  "displayName": "DevEx AI Assistant",
+  "description": "AI-powered Spring Boot project generator from LLD and OpenAPI specs. Uses GitHub Copilot for intelligent analysis and code generation.",
+  "version": "1.0.0",
+  "publisher": "your-company",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Other"
+  ],
+  "keywords": [
+    "spring boot",
+    "java",
+    "openapi",
+    "code generation",
+    "ai",
+    "copilot",
+    "productivity"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "devex.generateSpringBootProject",
+        "title": "Generate Spring Boot Project from Design",
+        "category": "DevEx"
+      },
+      {
+        "command": "devex.summarizeLLD",
+        "title": "Summarize LLD Document",
+        "category": "DevEx"
+      },
+      {
+        "command": "devex.parseOpenAPI",
+        "title": "Parse OpenAPI Specification",
+        "category": "DevEx"
+      },
+      {
+        "command": "devex.insertDeploymentTemplate",
+        "title": "Insert Deployment Template",
+        "category": "DevEx"
+      },
+      {
+        "command": "devex.addEndpoint",
+        "title": "Add API Endpoint from OpenAPI",
+        "category": "DevEx"
+      },
+      {
+        "command": "devex.viewDashboard",
+        "title": "View Productivity Dashboard",
+        "category": "DevEx"
+      },
+      {
+        "command": "devex.checkForUpdates",
+        "title": "Check for Extension Updates",
+        "category": "DevEx"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "resourceExtname == .md",
+          "command": "devex.summarizeLLD",
+          "group": "devex@1"
+        },
+        {
+          "when": "resourceExtname == .yaml || resourceExtname == .yml || resourceExtname == .json",
+          "command": "devex.parseOpenAPI",
+          "group": "devex@2"
+        }
+      ],
+      "explorer/context": [
+        {
+          "when": "explorerResourceIsFolder",
+          "command": "devex.generateSpringBootProject",
+          "group": "devex@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "DevEx AI Assistant",
+      "properties": {
+        "devex.defaultPackageName": {
+          "type": "string",
+          "default": "com.company",
+          "description": "Default Java package name prefix"
+        },
+        "devex.buildTool": {
+          "type": "string",
+          "enum": ["maven", "gradle"],
+          "default": "maven",
+          "description": "Default build tool for Spring Boot projects"
+        },
+        "devex.javaVersion": {
+          "type": "string",
+          "enum": ["17", "21"],
+          "default": "21",
+          "description": "Java version for generated projects"
+        },
+        "devex.springBootVersion": {
+          "type": "string",
+          "default": "3.4.1",
+          "description": "Spring Boot version to use"
+        },
+        "devex.telemetryEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable productivity tracking and metrics"
+        },
+        "devex.customTemplatesPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to custom deployment templates (overrides built-in templates)"
+        },
+        "devex.updateCheckUrl": {
+          "type": "string",
+          "default": "",
+          "description": "URL to check for extension updates (GitHub releases API)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.x",
+    "@types/js-yaml": "^4.0.9",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.3",
+    "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^2.22.0"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "swagger-parser": "^10.0.3",
+    "handlebars": "^4.7.8"
+  }
+}
