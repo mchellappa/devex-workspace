@@ -44,7 +44,7 @@ jobs:
       - name: Package extension (dry run)
         run: |
           npm install -g @vscode/vsce
-          vsce package --out test-build.vsix
+          vsce package --allow-missing-repository --baseContentUrl . --out test-build.vsix
       
       - name: Upload build artifact
         if: matrix.node-version == '18.x'

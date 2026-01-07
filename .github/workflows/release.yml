@@ -29,7 +29,7 @@ jobs:
         run: npm install -g @vscode/vsce
       
       - name: Package extension
-        run: vsce package
+        run: vsce package --allow-missing-repository --baseContentUrl .
       
       - name: Get version from package.json
         id: package_version
