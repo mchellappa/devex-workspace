@@ -218,6 +218,65 @@ All commands prefixed with `devex-ai-assistant.*`:
 8. npm run package → .vsix file
 ```
 
+### Creating a Release with GitHub Actions
+
+The extension includes three GitHub Actions workflows for automated building and releasing:
+
+#### Option 1: Automatic Release (Recommended)
+Push a version tag to trigger automatic release:
+
+```bash
+# Update version in package.json
+npm version patch  # or minor, major
+
+# Push the tag
+git push origin v1.0.1
+
+# GitHub Actions will:
+# - Build the VSIX
+# - Create a GitHub Release
+# - Attach the VSIX file
+```
+
+#### Option 2: Manual Release
+Use the manual release workflow for custom releases:
+
+```bash
+# Go to GitHub Actions
+1. Navigate to "Actions" tab
+2. Select "Manual Release Build"
+3. Click "Run workflow"
+4. Enter version (e.g., 1.0.1)
+5. Check "Create GitHub Release?" if needed
+6. Run workflow
+
+# Result: VSIX artifact ready for download
+```
+
+#### Option 3: Build Only (CI)
+Every push to `main` or `develop` triggers automated build:
+
+```bash
+git push origin main
+
+# GitHub Actions will:
+# - Test on Node.js 20.x and 22.x
+# - Run linter
+# - Run tests
+# - Package extension (dry run)
+# - Upload build artifact
+```
+
+#### Workflow Files
+- **`.github/workflows/build.yml`**: CI build and test
+- **`.github/workflows/release.yml`**: Automatic release on tags
+- **`.github/workflows/manual-release.yml`**: Manual release trigger
+
+#### Prerequisites
+- Node.js 20+ (configured in workflows)
+- GitHub repository with Actions enabled
+- Appropriate permissions for creating releases
+
 ## Distribution Strategy
 
 ### Phase 1: Internal Pilot (Current)
