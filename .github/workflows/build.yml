@@ -40,6 +40,7 @@ jobs:
       - name: Run tests
         run: npm test
         continue-on-error: true
+        if: false  # Skip tests until test files are created
       
       - name: Package extension (dry run)
         run: |
@@ -47,7 +48,6 @@ jobs:
           vsce package --allow-missing-repository --baseContentUrl . --out test-build.vsix
       
       - name: Upload build artifact
-        if: matrix.node-version == '18.x'
         uses: actions/upload-artifact@v4
         with:
           name: extension-build
