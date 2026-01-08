@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { generateSpringBootProjectCommand } from './commands/generateSpringBootProject';
 import { summarizeLLDCommand } from './commands/summarizeLLD';
+import { reviewLLDCommand } from './commands/reviewLLD';
 import { parseOpenAPICommand } from './commands/parseOpenAPI';
 import { insertDeploymentTemplateCommand } from './commands/insertDeploymentTemplate';
 import { addEndpointCommand } from './commands/addEndpoint';
@@ -27,14 +28,20 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('devex.summarizeLLD', () => 
-            summarizeLLDCommand(context, telemetryService)
+        vscode.commands.registerCommand('devex.summarizeLLD', (fileUri?: vscode.Uri) => 
+            summarizeLLDCommand(context, telemetryService, fileUri)
         )
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('devex.parseOpenAPI', () => 
-            parseOpenAPICommand(context, telemetryService)
+        vscode.commands.registerCommand('devex.reviewLLD', (fileUri?: vscode.Uri) => 
+            reviewLLDCommand(context, telemetryService, fileUri)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.parseOpenAPI', (fileUri?: vscode.Uri) => 
+            parseOpenAPICommand(context, telemetryService, fileUri)
         )
     );
 

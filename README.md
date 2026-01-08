@@ -11,7 +11,7 @@ The DevEx AI Assistant is a VS Code extension that leverages GitHub Copilot to g
 ### 🎯 Core Capabilities
 
 - **AI-Powered Project Generation**: Generate complete Spring Boot projects from LLD + OpenAPI specs
-- **Intelligent Code Analysis**: Summarize LLD documents and parse OpenAPI specifications using Copilot
+- **Intelligent Code Analysis**: Summarize LLD documents (.md, .txt, .docx) and parse OpenAPI specifications using Copilot
 - **Enterprise Templates**: Insert pre-approved deployment configurations (Kubernetes, Docker, CI/CD)
 - **Productivity Tracking**: Built-in telemetry to measure time savings and ROI
 - **Standards Enforcement**: All generated code follows principal engineer-level best practices
@@ -38,10 +38,17 @@ Access all commands via Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`):
 
 ## Prerequisites
 
+### Required (for using the extension)
+
 - **VS Code**: Version 1.85.0 or higher
 - **GitHub Copilot**: Active subscription (uses existing Copilot license)
-- **JDK**: Java 21 (for running generated projects)
-- **Maven/Gradle**: For building generated projects
+
+### Optional (only for building/running generated projects)
+
+- **JDK**: Java 17 or 21 (only needed to build and run generated Spring Boot projects)
+- **Maven/Gradle**: Build tools (only needed to compile and run generated projects)
+
+> **Note**: You can use all extension features (LLD summarization, OpenAPI parsing, code generation) without Java installed. Java is only required if you want to compile and run the generated Spring Boot applications.
 
 ## Installation
 
@@ -60,7 +67,7 @@ The extension will automatically check for updates from the configured internal 
 ### Generate Your First Spring Boot Project
 
 1. **Prepare Your Inputs**:
-   - LLD document (Markdown format with sequence diagrams)
+   - LLD document (Markdown, text, or Word .docx format)
    - OpenAPI specification (YAML or JSON)
 
 2. **Run the Generator**:
@@ -259,6 +266,38 @@ my-service/
 - Share feedback with DevEx team
 
 ## Troubleshooting
+
+### Permission Popup Not Appearing
+
+**Issue**: The popup to allow the extension to use AI models doesn't appear after installation.
+
+**Solution**:
+1. **Check Copilot Status**: Ensure GitHub Copilot is signed in and working
+   - Open Copilot Chat and verify it responds
+   - Command Palette → "GitHub Copilot: Sign In" if needed
+
+2. **Manually Grant Permissions**:
+   - Open Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`)
+   - Type: "Preferences: Open User Settings (JSON)"
+   - Add this line:
+     ```json
+     "github.copilot.chat.languageModelAccess": {
+       "devex-ai-assistant": true
+     }
+     ```
+
+3. **Trigger Permission Request**:
+   - Try using any extension command (e.g., "DevEx: Summarize LLD Document")
+   - This should trigger the permission popup
+   - Click "Allow" when prompted
+
+4. **Reload VS Code**:
+   - Command Palette → "Developer: Reload Window"
+   - Try using the extension again
+
+5. **Check Output Logs**:
+   - View → Output → Select "DevEx AI Assistant"
+   - Look for specific error messages
 
 ### GitHub Copilot Not Available
 

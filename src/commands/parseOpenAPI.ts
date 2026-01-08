@@ -6,18 +6,29 @@ import { logger } from '../utils/logger';
 
 export async function parseOpenAPICommand(
     context: vscode.ExtensionContext,
-    telemetryService: TelemetryService
+    telemetryService: TelemetryService,
+    fileUri?: vscode.Uri
 ): Promise<void> {
     const startTime = Date.now();
 
     try {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showErrorMessage('No active editor. Please open an OpenAPI specification file first.');
-            return;
+        let document: vscode.TextDocument;
+
+        // Try to get document from active editor or from provided URI
+        if (fileUri) {
+            // Called from context menu on a file in Explorer
+            document = await vscode.workspace.openTextDocument(fileUri);
+            await vscode.window.showTextDocument(document, { preview: false });
+        } else {
+            // Called from command palette - need active editor
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                vscode.window.showErrorMessage('No active editor. Please open an OpenAPI specification file first.');
+                return;
+            }
+            document = editor.document;
         }
 
-        const document = editor.document;
         const content = document.getText();
 
         // Prompt for manual time estimate

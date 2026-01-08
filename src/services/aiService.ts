@@ -92,6 +92,57 @@ Format the output as markdown for easy reading.`;
         return response.content;
     }
 
+    async reviewLLDAsArchitect(lldContent: string, focusArea: string): Promise<string> {
+        const systemPrompt = `You are a Principal Architect with 20+ years of experience reviewing system designs. Your role is to provide constructive, actionable feedback on Low-Level Design documents to help engineering teams deliver production-ready systems.
+
+Focus on:
+- Architectural concerns and anti-patterns
+- Complexity assessment and simplification opportunities
+- Risk identification and mitigation strategies
+- Alignment with best practices and industry standards
+- Practical recommendations for improvement
+
+Provide feedback that is:
+- Specific and actionable
+- Balanced (acknowledge strengths, highlight concerns)
+- Prioritized (critical issues first)
+- Ready to share with engineering teams`;
+
+        const prompt = `Please review this Low-Level Design document from a Principal Architect perspective.
+
+**Focus Area:** ${focusArea}
+
+**LLD Content:**
+${lldContent}
+
+Provide a comprehensive architectural review with the following sections:
+
+## 1. Executive Summary
+Brief overview of the design and key concerns
+
+## 2. Architectural Assessment
+- Strengths of the current design
+- Areas of concern
+- Complexity analysis
+
+## 3. Key Recommendations
+Prioritized list of actionable improvements (Critical, High, Medium priority)
+
+## 4. Risk Analysis
+Potential risks and mitigation strategies
+
+## 5. Focus Area Deep Dive: ${focusArea}
+Detailed review specific to the focus area
+
+## 6. Questions for the Team
+Clarifying questions to address before implementation
+
+Format the review in clear markdown suitable for sharing with the engineering team.`;
+
+        const response = await this.callLanguageModel(prompt, systemPrompt);
+        return response.content;
+    }
+
     async generateSpringBootCode(
         projectName: string,
         packageName: string,

@@ -2,8 +2,8 @@
   "name": "devex-ai-assistant",
   "displayName": "DevEx AI Assistant",
   "description": "AI-powered Spring Boot project generator from LLD and OpenAPI specs. Uses GitHub Copilot for intelligent analysis and code generation.",
-  "version": "1.0.0",
-  "publisher": "your-company",
+  "version": "1.1.0",
+  "publisher": "CodeSamurai",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -38,6 +38,11 @@
         "category": "DevEx"
       },
       {
+        "command": "devex.reviewLLD",
+        "title": "Review LLD",
+        "category": "DevEx"
+      },
+      {
         "command": "devex.parseOpenAPI",
         "title": "Parse OpenAPI Specification",
         "category": "DevEx"
@@ -66,14 +71,19 @@
     "menus": {
       "editor/context": [
         {
-          "when": "resourceExtname == .md",
+          "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
           "command": "devex.summarizeLLD",
           "group": "devex@1"
         },
         {
+          "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
+          "command": "devex.reviewLLD",
+          "group": "devex@2"
+        },
+        {
           "when": "resourceExtname == .yaml || resourceExtname == .yml || resourceExtname == .json",
           "command": "devex.parseOpenAPI",
-          "group": "devex@2"
+          "group": "devex@3"
         }
       ],
       "explorer/context": [
@@ -81,6 +91,21 @@
           "when": "explorerResourceIsFolder",
           "command": "devex.generateSpringBootProject",
           "group": "devex@1"
+        },
+        {
+          "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
+          "command": "devex.summarizeLLD",
+          "group": "devex@2"
+        },
+        {
+          "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
+          "command": "devex.reviewLLD",
+          "group": "devex@3"
+        },
+        {
+          "when": "resourceExtname == .yaml || resourceExtname == .yml || resourceExtname == .json",
+          "command": "devex.parseOpenAPI",
+          "group": "devex@4"
         }
       ]
     },
@@ -94,13 +119,19 @@
         },
         "devex.buildTool": {
           "type": "string",
-          "enum": ["maven", "gradle"],
+          "enum": [
+            "maven",
+            "gradle"
+          ],
           "default": "maven",
           "description": "Default build tool for Spring Boot projects"
         },
         "devex.javaVersion": {
           "type": "string",
-          "enum": ["17", "21"],
+          "enum": [
+            "17",
+            "21"
+          ],
           "default": "21",
           "description": "Java version for generated projects"
         },
@@ -137,19 +168,20 @@
     "package": "vsce package"
   },
   "devDependencies": {
-    "@types/vscode": "^1.85.0",
-    "@types/node": "^20.x",
     "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.x",
+    "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
-    "eslint": "^8.56.0",
-    "typescript": "^5.3.3",
     "@vscode/test-electron": "^2.3.8",
-    "@vscode/vsce": "^2.22.0"
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.3"
   },
   "dependencies": {
+    "handlebars": "^4.7.8",
     "js-yaml": "^4.1.0",
-    "swagger-parser": "^10.0.3",
-    "handlebars": "^4.7.8"
+    "mammoth": "^1.11.0",
+    "swagger-parser": "^10.0.3"
   }
 }
