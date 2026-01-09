@@ -2,7 +2,9 @@ import * as vscode from 'vscode';
 import { generateSpringBootProjectCommand } from './commands/generateSpringBootProject';
 import { summarizeLLDCommand } from './commands/summarizeLLD';
 import { reviewLLDCommand } from './commands/reviewLLD';
+import { reviewCodeCommand } from './commands/reviewCode';
 import { parseOpenAPICommand } from './commands/parseOpenAPI';
+import { generateOpenAPISpecCommand } from './commands/generateOpenAPISpec';
 import { insertDeploymentTemplateCommand } from './commands/insertDeploymentTemplate';
 import { addEndpointCommand } from './commands/addEndpoint';
 import { viewDashboardCommand } from './commands/viewDashboard';
@@ -46,6 +48,12 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateOpenAPISpec', (fileUri?: vscode.Uri) => 
+            generateOpenAPISpecCommand(context, telemetryService, fileUri)
+        )
+    );
+
+    context.subscriptions.push(
         vscode.commands.registerCommand('devex.insertDeploymentTemplate', () => 
             insertDeploymentTemplateCommand(context, telemetryService)
         )
@@ -66,6 +74,12 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('devex.checkForUpdates', () => 
             checkForUpdatesCommand(context)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.reviewCode', (folderUri?: vscode.Uri) => 
+            reviewCodeCommand(context, telemetryService, folderUri)
         )
     );
 

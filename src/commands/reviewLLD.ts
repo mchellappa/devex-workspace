@@ -119,6 +119,8 @@ export async function reviewLLDCommand(
 
 async function promptFocusArea(): Promise<string | undefined> {
     const options = [
+        { label: 'Software Engineering Completeness', detail: '⭐⭐ Comprehensive: error handling, state, security, performance, ops', icon: '🔍' },
+        { label: 'API Design Completeness', detail: '⭐ Check if LLD has all details for OpenAPI/Code generation', icon: '✅' },
         { label: 'Integration APIs', detail: 'Focus on integration layer and external system connections' },
         { label: 'Backend APIs (BFF/Domain)', detail: 'Focus on backend architecture and API design' },
         { label: 'Frontend Architecture', detail: 'Focus on frontend components and MFE architecture' },
@@ -127,7 +129,8 @@ async function promptFocusArea(): Promise<string | undefined> {
     ];
 
     const selected = await vscode.window.showQuickPick(options, {
-        placeHolder: 'What should the architectural review focus on?'
+        placeHolder: 'What should the architectural review focus on?',
+        title: 'LLD Review Focus'
     });
 
     if (!selected) {

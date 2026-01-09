@@ -1,15 +1,23 @@
 {
   "name": "devex-ai-assistant",
   "displayName": "DevEx AI Assistant",
-  "description": "AI-powered Spring Boot project generator from LLD and OpenAPI specs. Uses GitHub Copilot for intelligent analysis and code generation.",
-  "version": "1.1.0",
+  "description": "Complete SDLC acceleration platform: LLD review, OpenAPI generation, Spring Boot code generation, deployment automation, and productivity analytics. AI-powered by GitHub Copilot.",
+  "version": "1.2.2",
   "publisher": "CodeSamurai",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mchellappa/devex-workspace.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
     "Programming Languages",
     "Snippets",
+    "Linters",
+    "Testing",
     "Other"
   ],
   "keywords": [
@@ -19,7 +27,13 @@
     "code generation",
     "ai",
     "copilot",
-    "productivity"
+    "productivity",
+    "lld review",
+    "api design",
+    "architecture review",
+    "devops",
+    "sdlc",
+    "automation"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -48,6 +62,11 @@
         "category": "DevEx"
       },
       {
+        "command": "devex.generateOpenAPISpec",
+        "title": "Generate OpenAPI Spec from LLD",
+        "category": "DevEx"
+      },
+      {
         "command": "devex.insertDeploymentTemplate",
         "title": "Insert Deployment Template",
         "category": "DevEx"
@@ -66,6 +85,11 @@
         "command": "devex.checkForUpdates",
         "title": "Check for Extension Updates",
         "category": "DevEx"
+      },
+      {
+        "command": "devex.reviewCode",
+        "title": "Review Code",
+        "category": "DevEx"
       }
     ],
     "menus": {
@@ -81,9 +105,14 @@
           "group": "devex@2"
         },
         {
+          "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
+          "command": "devex.generateOpenAPISpec",
+          "group": "devex@3"
+        },
+        {
           "when": "resourceExtname == .yaml || resourceExtname == .yml || resourceExtname == .json",
           "command": "devex.parseOpenAPI",
-          "group": "devex@3"
+          "group": "devex@4"
         }
       ],
       "explorer/context": [
@@ -91,6 +120,11 @@
           "when": "explorerResourceIsFolder",
           "command": "devex.generateSpringBootProject",
           "group": "devex@1"
+        },
+        {
+          "when": "explorerResourceIsFolder",
+          "command": "devex.reviewCode",
+          "group": "devex@2"
         },
         {
           "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
@@ -103,9 +137,14 @@
           "group": "devex@3"
         },
         {
+          "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
+          "command": "devex.generateOpenAPISpec",
+          "group": "devex@4"
+        },
+        {
           "when": "resourceExtname == .yaml || resourceExtname == .yml || resourceExtname == .json",
           "command": "devex.parseOpenAPI",
-          "group": "devex@4"
+          "group": "devex@5"
         }
       ]
     },
