@@ -5,7 +5,78 @@ All notable changes to the DevEx AI Assistant extension will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.2] - 2026-01-09
+## [1.2.6] - 2026-01-10
+
+### Added
+- **Code Generation Readiness Review** - New LLD review focus area for ensuring production-ready code generation
+  - Validates LLD completeness for Spring Boot code generator
+  - Checks if LLD contains sufficient detail to generate working code vs TODO placeholders
+  - Comprehensive checklist covering:
+    - Complete Data Models with all fields, types, constraints, and JPA annotations
+    - Step-by-Step Business Logic for each API endpoint
+    - Error Handling scenarios with custom exceptions and HTTP status codes
+    - Validation Rules with Bean Validation annotations and patterns
+    - DTOs with mapping rules and example JSON structures
+    - Repository Methods with signatures and return types
+    - Security and authorization requirements
+  - Provides readiness score (0-100%) indicating how much production-ready code can be generated
+  - Offers specific, actionable "How to Fix" guidance with code examples
+  - Lists missing details that will result in TODO placeholders
+  - References comprehensive documentation and examples
+- **Review Code Command** - New folder-level code review feature
+  - Acts as Principal Engineer performing comprehensive code reviews
+  - Available via right-click on any folder in Explorer
+  - Auto-detects project type (Spring Boot, Node.js, .NET)
+  - Reviews up to 50 files across multiple dimensions:
+    - Code Quality & Best Practices
+    - Architecture & Design Patterns
+    - Error Handling & Resilience
+    - Security Vulnerabilities
+    - Performance Considerations
+    - Testing Strategy
+    - Documentation & Readability
+    - Maintainability & Technical Debt
+  - Generates timestamped review document with prioritized recommendations
+  - Supports Java, JavaScript/TypeScript, and C# codebases
+
+### Documentation
+- **docs/LLD_REQUIREMENTS.md** - Complete guide for writing LLDs that generate production-ready code
+  - Required LLD sections with detailed examples
+  - Data model specifications with JPA and validation annotations
+  - API endpoint documentation with step-by-step business logic
+  - Complete business rules and error handling patterns
+  - DTO definitions and mapping strategies
+  - Repository method specifications
+  - Service layer implementation examples
+  - Database schema definitions
+  - Common mistakes to avoid
+  - Quick checklist for LLD completeness
+- **examples/complete-user-management-lld.md** - Production-ready LLD example
+  - Complete user management system with CRUD operations
+  - Full data model with all annotations and constraints
+  - Step-by-step business logic for each endpoint
+  - Actual Java service method implementations
+  - Comprehensive error handling
+  - DTOs with validation rules
+  - Repository methods
+  - Security configuration
+  - 100% code generation ready
+
+### Enhanced
+- **Review LLD Command** - Added "Code Generation Readiness" as first (recommended) option
+- **AI Service** - New `reviewLLDForCodeGenerationReadiness()` method for detailed LLD validation
+- **AI Service** - New `extractImplementationDetails()` method for structured data extraction from LLDs
+- **Spring Boot Generator** - Registered Handlebars helpers (eq, ne, lt, gt, and, or) to fix template compilation errors
+
+### Fixed
+- Missing Handlebars helper "eq" error in Spring Boot project generation
+- Telemetry service method calls in reviewCode command
+
+## [1.2.4] - 2026-01-09
+### Added
+- Fixed the missing helper in spring boot generator
+
+## [1.2.3] - 2026-01-09
 ### Added
 - Added icon
 

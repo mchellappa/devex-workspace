@@ -94,6 +94,10 @@ Format the output as markdown for easy reading.`;
 
     async reviewLLDAsArchitect(lldContent: string, focusArea: string): Promise<string> {
         // Special handling for comprehensive completeness reviews
+        if (focusArea === 'Code Generation Readiness') {
+            return await this.reviewLLDForCodeGenerationReadiness(lldContent);
+        }
+
         if (focusArea === 'API Design Completeness') {
             return await this.reviewLLDForAPICompleteness(lldContent);
         }
@@ -655,6 +659,576 @@ ${apiInfo.format === 'yaml' ?
         }
         
         return content;
+    }
+
+    async extractImplementationDetails(lldContent: string, openApiSpec: any): Promise<any> {
+        const systemPrompt = `You are an expert software architect who extracts detailed implementation requirements from Low-Level Design documents. Your goal is to produce structured, actionable information that can be used to generate production-ready code with complete business logic, not just TODO placeholders.
+
+You must extract:
+1. Complete business logic for each endpoint (step-by-step implementation)
+2. Validation rules and error handling
+3. Data models with all constraints
+4. Service layer logic
+5. Repository queries
+6. Exception handling strategies`;
+
+        const prompt = `Analyze this Low-Level Design document and OpenAPI specification to extract detailed implementation requirements.
+
+**LLD Content:**
+${lldContent}
+
+**OpenAPI Spec:**
+${JSON.stringify(openApiSpec, null, 2)}
+
+Extract and structure the following information as JSON:
+
+{
+  "entities": [
+    {
+      "name": "User",
+      "description": "Represents a system user",
+      "fields": [
+        {
+          "name": "id",
+          "type": "Long",
+          "javaType": "Long",
+          "nullable": false,
+          "primaryKey": true,
+          "generated": true,
+          "validations": ["@GeneratedValue(strategy = GenerationType.IDENTITY)"]
+        },
+        {
+          "name": "username",
+          "type": "String",
+          "javaType": "String",
+          "nullable": false,
+          "unique": true,
+          "maxLength": 50,
+          "validations": ["@NotBlank", "@Size(min=3, max=50)", "@Pattern(regexp=\"^[a-zA-Z0-9]*$\")"]
+        }
+      ],
+      "relationships": [
+        {
+          "type": "OneToMany",
+          "target": "Order",
+          "mappedBy": "user",
+          "cascade": ["PERSIST", "MERGE"]
+        }
+      ]
+    }
+  ],
+  "endpoints": [
+    {
+      "path": "/api/users/{id}",
+      "method": "GET",
+      "operationId": "getUserById",
+      "description": "Retrieve user by ID",
+      "parameters": [
+        {"name": "id", "type": "Long", "location": "path", "required": true}
+      ],
+      "responseType": "UserDTO",
+      "businessLogic": [
+        "Validate authentication token",
+        "Check user has permission to view (self or admin)",
+        "Query user from database by ID using userRepository.findById(id)",
+        "If not found, throw new UserNotFoundException(\\\"User not found with id: \\\" + id)",
+        "Check authorization: if current user is not self and not admin, throw ForbiddenException",
+        "Map User entity to UserDTO using userMapper.toDTO(user)",
+        "Return UserDTO"
+      ],
+      "serviceMethodImplementation": "public UserDTO getUserById(Long id) {\\n    log.info(\\\"Fetching user by id: {}\\\", id);\\n    User currentUser = securityService.getCurrentUser();\\n    if (!currentUser.getId().equals(id) && !currentUser.isAdmin()) {\\n        log.warn(\\\"User {} attempted to access user {}\\\", currentUser.getId(), id);\\n        throw new ForbiddenException(\\\"Cannot access other user's information\\\");\\n    }\\n    User user = userRepository.findById(id).orElseThrow(() -> new UserNotFoundException(\\\"User not found with id: \\\" + id));\\n    log.info(\\\"Successfully retrieved user: {}\\\", user.getUsername());\\n    return userMapper.toDTO(user);\\n}",
+      "errorHandling": [
+        {"exception": "UserNotFoundException", "httpStatus": 404, "message": "User not found"},
+        {"exception": "ForbiddenException", "httpStatus": 403, "message": "Cannot access other user's information"},
+        {"exception": "UnauthorizedException", "httpStatus": 401, "message": "Authentication required"}
+      ],
+      "validations": [
+        {"field": "id", "rules": ["Must be positive number", "Must exist in database"]}
+      ]
+    },
+    {
+      "path": "/api/users",
+      "method": "POST",
+      "operationId": "createUser",
+      "description": "Create new user",
+      "requestBody": "CreateUserRequest",
+      "responseType": "UserDTO",
+      "businessLogic": [
+        "Validate all required fields using @Valid annotation",
+        "Check username uniqueness: if (userRepository.existsByUsername(request.getUsername())) throw new DuplicateResourceException",
+        "Check email uniqueness: if (userRepository.existsByEmail(request.getEmail())) throw new DuplicateResourceException",
+        "Validate password strength using passwordValidator.isStrong(password)",
+        "Hash password: passwordEncoder.encode(request.getPassword())",
+        "Create new User entity and set all fields",
+        "Set default role to USER",
+        "Set status to ACTIVE",
+        "Set createdAt to LocalDateTime.now()",
+        "Save user: userRepository.save(user)",
+        "Send welcome email asynchronously (don't block if it fails)",
+        "Map to UserDTO and return"
+      ],
+      "serviceMethodImplementation": "@Transactional\\npublic UserDTO createUser(CreateUserRequest request) {\\n    log.info(\\\"Creating new user: {}\\\", request.getUsername());\\n    if (userRepository.existsByUsername(request.getUsername())) {\\n        throw new DuplicateResourceException(\\\"Username already exists\\\");\\n    }\\n    if (userRepository.existsByEmail(request.getEmail())) {\\n        throw new DuplicateResourceException(\\\"Email already exists\\\");\\n    }\\n    if (!passwordValidator.isStrong(request.getPassword())) {\\n        throw new ValidationException(\\\"Password does not meet strength requirements\\\");\\n    }\\n    User user = new User();\\n    user.setUsername(request.getUsername());\\n    user.setEmail(request.getEmail());\\n    user.setPassword(passwordEncoder.encode(request.getPassword()));\\n    user.setFirstName(request.getFirstName());\\n    user.setLastName(request.getLastName());\\n    user.setRole(Role.USER);\\n    user.setStatus(Status.ACTIVE);\\n    user.setCreatedAt(LocalDateTime.now());\\n    user = userRepository.save(user);\\n    log.info(\\\"User created successfully with id: {}\\\", user.getId());\\n    try {\\n        emailService.sendWelcomeEmail(user.getEmail(), user.getFirstName());\\n    } catch (Exception e) {\\n        log.error(\\\"Failed to send welcome email\\\", e);\\n    }\\n    return userMapper.toDTO(user);\\n}",
+      "errorHandling": [
+        {"exception": "ValidationException", "httpStatus": 400, "message": "Invalid input data"},
+        {"exception": "DuplicateResourceException", "httpStatus": 409, "message": "Username or email already exists"}
+      ]
+    }
+  ],
+  "dtos": [
+    {
+      "name": "UserDTO",
+      "type": "response",
+      "fields": [
+        {"name": "id", "type": "Long"},
+        {"name": "username", "type": "String"},
+        {"name": "email", "type": "String"},
+        {"name": "firstName", "type": "String"},
+        {"name": "lastName", "type": "String"},
+        {"name": "role", "type": "String"},
+        {"name": "status", "type": "String"},
+        {"name": "createdAt", "type": "LocalDateTime"}
+      ],
+      "excludeFields": ["password"],
+      "mappingNotes": "Never include password field, format timestamps as ISO-8601"
+    }
+  ],
+  "businessRules": [
+    "Username and email must be unique across the system",
+    "Passwords must be at least 8 characters with uppercase, lowercase, number, and special char",
+    "Only admins can delete users",
+    "Users with active orders cannot be deleted",
+    "Email changes require verification"
+  ],
+  "repositoryMethods": [
+    {
+      "name": "existsByUsername",
+      "returnType": "boolean",
+      "parameters": [{"name": "username", "type": "String"}],
+      "query": "boolean existsByUsername(String username);"
+    },
+    {
+      "name": "existsByEmail",
+      "returnType": "boolean",
+      "parameters": [{"name": "email", "type": "String"}],
+      "query": "boolean existsByEmail(String email);"
+    }
+  ]
+}
+
+CRITICAL INSTRUCTIONS:
+1. Extract as much implementation detail as possible from the LLD
+2. If business logic steps are mentioned in the LLD, capture them exactly
+3. If error handling is described, include all scenarios
+4. If the LLD lacks detail for an endpoint, use RESTful best practices to infer reasonable implementation
+5. Always include proper validation, error handling, and logging
+6. Provide actual method implementations, not TODO comments
+7. Return ONLY valid JSON, no markdown or explanations`;
+
+        const response = await this.callLanguageModel(prompt, systemPrompt);
+        
+        try {
+            // Clean and parse JSON response
+            let content = response.content.trim();
+            if (content.startsWith('```json')) {
+                content = content.substring(content.indexOf('\n') + 1);
+            }
+            if (content.endsWith('```')) {
+                content = content.substring(0, content.lastIndexOf('```')).trim();
+            }
+            
+            return JSON.parse(content);
+        } catch (error) {
+            logger.error('Failed to parse implementation details JSON', error);
+            logger.info(`Raw response: ${response.content}`);
+            throw new Error('Failed to extract structured implementation details from LLD');
+        }
+    }
+
+    async reviewLLDForCodeGenerationReadiness(lldContent: string): Promise<string> {
+        const systemPrompt = `You are a Technical Lead reviewing Low-Level Design documents to ensure they contain ALL the information engineers need to generate production-ready code using the Spring Boot generator.
+
+Your role is to verify that the LLD is complete enough for automatic code generation that produces real implementations, not TODO placeholders.
+
+You must check if the LLD includes:
+1. **Complete Data Models** with all fields, types, constraints, and JPA annotations
+2. **Step-by-Step Business Logic** for each API endpoint
+3. **Error Handling** scenarios for every operation
+4. **Validation Rules** with specific patterns and constraints
+5. **DTOs** with mapping rules
+6. **Repository Methods** required for data access
+7. **Security** and authorization rules
+
+Be specific about what's missing and provide actionable guidance.`;
+
+        const prompt = `Review this LLD document to determine if it's ready for production-ready code generation. Engineers will use this LLD with an automated Spring Boot generator. If the LLD lacks detail, the generator will produce TODO placeholders instead of working code.
+
+**LLD Content:**
+${lldContent}
+
+Provide a comprehensive Code Generation Readiness Review with the following sections:
+
+## 🎯 Overall Readiness Score
+
+Rate the LLD for code generation: **Ready** | **Needs Minor Improvements** | **Needs Major Improvements** | **Not Ready**
+
+Provide a percentage score (0-100%) indicating how much production-ready code can be generated from this LLD.
+
+---
+
+## ✅ What's Present (Will Generate Working Code)
+
+List all aspects that are well-documented and will result in production-ready generated code:
+
+### Data Models
+- [ ] Complete with all required information
+- What's present: [list what's documented]
+
+### API Endpoints  
+- [ ] Have step-by-step business logic
+- What's present: [list which endpoints are complete]
+
+### Error Handling
+- [ ] Error scenarios documented
+- What's present: [list what's covered]
+
+### Validation Rules
+- [ ] Detailed validation constraints
+- What's present: [list what's specified]
+
+### DTOs & Mappings
+- [ ] Request/response models defined
+- What's present: [list what's available]
+
+---
+
+## ❌ What's Missing (Will Generate TODOs)
+
+### CRITICAL MISSING (Without these, code will be incomplete):
+
+#### 📊 Data Models
+Check each entity:
+- [ ] **Field Definitions**: Does each entity list ALL fields with types (String, Long, Integer, etc.)?
+- [ ] **Constraints**: Are constraints specified (unique, nullable, max length)?
+- [ ] **JPA Annotations**: Are validation annotations mentioned (@NotBlank, @Size, @Email, etc.)?
+- [ ] **Relationships**: Are entity relationships defined (OneToMany, ManyToOne, etc.)?
+- [ ] **Default Values**: Are default values specified where needed?
+
+**Missing Details**: [List specific missing information]
+
+**Impact**: Without complete data models, generator will create empty entity classes.
+
+**How to Fix**:
+\`\`\`markdown
+Add to LLD:
+
+### Entity: User
+**Fields**:
+- \`id\` (Long): Primary key, auto-generated
+  - JPA: @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+- \`username\` (String): Unique, required, max 50 chars
+  - Validation: @NotBlank @Size(min=3, max=50) @Pattern(regexp="^[a-zA-Z0-9]*$")
+  - JPA: @Column(unique=true, nullable=false, length=50)
+- \`email\` (String): Unique, required, valid email format
+  - Validation: @NotBlank @Email @Size(max=255)
+  - JPA: @Column(unique=true, nullable=false)
+[... list all fields ...]
+\`\`\`
+
+---
+
+#### 🔄 API Endpoint Business Logic
+For each endpoint, check:
+- [ ] **Step-by-Step Logic**: Is the business logic broken down into numbered steps?
+- [ ] **Database Operations**: Are specific repository methods mentioned?
+- [ ] **Conditionals**: Are if/else conditions specified?
+- [ ] **Error Scenarios**: Is error handling documented for each step?
+- [ ] **Return Values**: Are return types and response data specified?
+
+**Endpoints with Missing Logic**: [List endpoints that lack implementation details]
+
+**Impact**: Without business logic steps, generator will create methods with \`// TODO: Implement\` comments.
+
+**How to Fix**:
+\`\`\`markdown
+Add to LLD:
+
+### POST /api/users
+**Business Logic (Step-by-Step)**:
+1. Validate request body using Bean Validation
+2. Check username uniqueness: \`if (userRepository.existsByUsername(request.getUsername()))\`
+3. If duplicate found: \`throw new DuplicateResourceException("Username already exists")\`
+4. Check email uniqueness: \`if (userRepository.existsByEmail(request.getEmail()))\`
+5. If duplicate found: \`throw new DuplicateResourceException("Email already exists")\`
+6. Validate password strength using passwordValidator
+7. Hash password: \`passwordEncoder.encode(request.getPassword())\`
+8. Create new User entity with all fields
+9. Set default role = USER, status = ACTIVE
+10. Set createdAt = LocalDateTime.now()
+11. Save: \`userRepository.save(user)\`
+12. Send welcome email asynchronously (don't block if fails)
+13. Map to UserDTO and return with HTTP 201
+
+**Service Method Implementation** (optional but highly recommended):
+\`\`\`java
+@Transactional
+public UserDTO createUser(CreateUserRequest request) {
+    log.info("Creating user: {}", request.getUsername());
+    if (userRepository.existsByUsername(request.getUsername())) {
+        throw new DuplicateResourceException("Username already exists");
+    }
+    if (userRepository.existsByEmail(request.getEmail())) {
+        throw new DuplicateResourceException("Email already exists");
+    }
+    User user = new User();
+    user.setUsername(request.getUsername());
+    user.setEmail(request.getEmail());
+    user.setPassword(passwordEncoder.encode(request.getPassword()));
+    user.setRole(Role.USER);
+    user.setStatus(Status.ACTIVE);
+    user.setCreatedAt(LocalDateTime.now());
+    user = userRepository.save(user);
+    emailService.sendWelcomeEmailAsync(user.getEmail());
+    return userMapper.toDTO(user);
+}
+\`\`\`
+\`\`\`
+
+---
+
+#### ⚠️ Error Handling
+Check if documented:
+- [ ] **Custom Exceptions**: Are specific exception classes defined?
+- [ ] **HTTP Status Codes**: Is each error mapped to a status code (404, 409, 400, etc.)?
+- [ ] **Error Messages**: Are user-friendly messages specified?
+- [ ] **Error Response Format**: Is the JSON error structure defined?
+
+**Missing Error Scenarios**: [List what's not covered]
+
+**How to Fix**:
+\`\`\`markdown
+Add to LLD:
+
+### Error Handling
+
+**Custom Exceptions**:
+- \`UserNotFoundException extends RuntimeException\` → HTTP 404
+- \`DuplicateResourceException extends RuntimeException\` → HTTP 409
+- \`ValidationException extends RuntimeException\` → HTTP 400
+- \`ForbiddenException extends RuntimeException\` → HTTP 403
+
+**Error Response Format**:
+\`\`\`json
+{
+  "timestamp": "2026-01-10T10:30:00Z",
+  "status": 404,
+  "error": "Not Found",
+  "message": "User not found with id: 123",
+  "path": "/api/users/123"
+}
+\`\`\`
+
+**Endpoint Error Handling**:
+- UserNotFoundException → HTTP 404, message: "User not found with id: {id}"
+- DuplicateResourceException → HTTP 409, message: "Username/email already exists"
+\`\`\`
+
+---
+
+#### ✔️ Validation Rules
+Check if specified:
+- [ ] **Field Validations**: Are Bean Validation annotations listed (@NotBlank, @Size, @Email)?
+- [ ] **Custom Validations**: Are business-specific rules defined?
+- [ ] **Patterns**: Are regex patterns provided where needed?
+- [ ] **Error Messages**: Are validation error messages customized?
+
+**Missing Validations**: [List fields without validation rules]
+
+**How to Fix**:
+\`\`\`markdown
+Add to LLD:
+
+### CreateUserRequest Validation
+- username: @NotBlank @Size(min=3, max=50) @Pattern(regexp="^[a-zA-Z0-9]*$")
+- email: @NotBlank @Email @Size(max=255)
+- password: @NotBlank @Size(min=8, max=100)
+- firstName: @NotBlank @Size(max=100)
+- lastName: @NotBlank @Size(max=100)
+
+**Custom Password Validation**:
+- Minimum 8 characters
+- At least 1 uppercase letter
+- At least 1 lowercase letter  
+- At least 1 digit
+- At least 1 special character (!@#$%^&*)
+\`\`\`
+
+---
+
+#### 📦 DTOs and Mappings
+Check if defined:
+- [ ] **Request DTOs**: Are input models documented with all fields?
+- [ ] **Response DTOs**: Are output models documented?
+- [ ] **Mapping Rules**: Is it clear which entity fields map to DTO fields?
+- [ ] **Excluded Fields**: Are sensitive fields (like passwords) marked for exclusion?
+
+**Missing DTOs**: [List which DTOs need to be defined]
+
+**How to Fix**:
+\`\`\`markdown
+Add to LLD:
+
+### DTOs
+
+#### UserDTO (Response)
+\`\`\`json
+{
+  "id": 1,
+  "username": "johndoe",
+  "email": "john@example.com",
+  "firstName": "John",
+  "lastName": "Doe",
+  "role": "USER",
+  "status": "ACTIVE",
+  "createdAt": "2026-01-10T10:00:00Z"
+}
+\`\`\`
+
+**Mapping Rules**:
+- Include all User entity fields EXCEPT password
+- Format createdAt/updatedAt as ISO-8601
+- Use MapStruct for mapping
+
+#### CreateUserRequest (Input)
+All fields required:
+- username (String): @NotBlank @Size(min=3, max=50)
+- email (String): @NotBlank @Email
+- password (String): @NotBlank @Size(min=8)
+- firstName (String): @NotBlank
+- lastName (String): @NotBlank
+\`\`\`
+
+---
+
+#### 🗄️ Repository Methods
+Check if specified:
+- [ ] **Custom Queries**: Are non-standard queries documented?
+- [ ] **Method Signatures**: Are method names and parameters specified?
+- [ ] **Return Types**: Are return types clear (Optional, List, boolean)?
+
+**Missing Repository Methods**: [List what needs to be added]
+
+**How to Fix**:
+\`\`\`markdown
+Add to LLD:
+
+### UserRepository extends JpaRepository<User, Long>
+
+**Custom Methods**:
+\`\`\`java
+boolean existsByUsername(String username);
+boolean existsByEmail(String email);
+Optional<User> findByUsername(String username);
+Optional<User> findByEmail(String email);
+List<User> findByStatus(Status status);
+\`\`\`
+\`\`\`
+
+---
+
+## 📋 Code Generation Readiness Checklist
+
+Before using the Spring Boot generator, ensure your LLD includes:
+
+**Data Models**:
+- [ ] All entities with complete field definitions
+- [ ] Field types (String, Long, Integer, etc.)
+- [ ] Constraints (unique, nullable, max length)
+- [ ] JPA annotations (@Id, @Column, @ManyToOne, etc.)
+- [ ] Bean Validation annotations (@NotBlank, @Size, @Email, etc.)
+- [ ] Relationships between entities
+- [ ] Default values where applicable
+
+**API Endpoints** (for EACH endpoint):
+- [ ] Complete step-by-step business logic
+- [ ] Specific repository method calls
+- [ ] Conditional logic (if/else scenarios)
+- [ ] Error handling for each step
+- [ ] Authorization checks
+- [ ] Return values and HTTP status codes
+- [ ] Ideally: actual Java service method implementation
+
+**Error Handling**:
+- [ ] Custom exception class definitions
+- [ ] HTTP status code mappings
+- [ ] Error messages for each scenario
+- [ ] Error response JSON format
+- [ ] Global exception handler structure
+
+**Validation**:
+- [ ] Bean Validation annotations for all DTOs
+- [ ] Custom validation rules
+- [ ] Regex patterns where needed
+- [ ] Password strength requirements
+- [ ] Business rule validations
+
+**DTOs**:
+- [ ] Request DTO definitions with all fields
+- [ ] Response DTO definitions with all fields
+- [ ] Mapping rules (entity ↔ DTO)
+- [ ] Excluded fields (e.g., passwords)
+- [ ] Example JSON structures
+
+**Repository**:
+- [ ] Custom query method signatures
+- [ ] Method return types
+- [ ] Query parameters
+
+**Security**:
+- [ ] Authentication requirements
+- [ ] Authorization rules (who can access what)
+- [ ] Password encoding strategy
+- [ ] JWT/token handling
+
+---
+
+## 🎓 Recommendations for Engineers
+
+### Immediate Actions Required:
+1. [List specific sections to add/enhance]
+2. [List specific details to clarify]
+3. [List specific business logic to document]
+
+### Best Practices to Follow:
+- Be explicit: "Check username uniqueness" → "if (userRepository.existsByUsername(request.getUsername())) throw..."
+- Include error paths: Document what happens when operations fail
+- Provide examples: Show sample request/response JSON
+- Think like a developer: What questions would you have when implementing this?
+
+### Reference Example:
+See \`examples/complete-user-management-lld.md\` for a complete LLD that generates 100% production-ready code with no TODOs.
+
+See \`docs/LLD_REQUIREMENTS.md\` for detailed guidance on what to include in your LLD.
+
+---
+
+## 📊 Summary
+
+**Current State**: [Brief summary of what's present and what's missing]
+
+**Code Generation Outcome**: 
+- **X%** of code will be production-ready
+- **Y%** will be TODO placeholders requiring manual implementation
+
+**Recommendation**: [Ready to generate | Add missing details first | Needs significant enhancement]
+
+**Estimated Time to Complete LLD**: [X hours to add missing information]
+
+---
+
+*💡 Remember: The more detailed your LLD, the more production-ready code the generator will produce. Invest time in documentation now to save development time later!*`;
+
+        const response = await this.callLanguageModel(prompt, systemPrompt);
+        return response.content;
     }
 }
 

@@ -119,8 +119,9 @@ export async function reviewLLDCommand(
 
 async function promptFocusArea(): Promise<string | undefined> {
     const options = [
-        { label: 'Software Engineering Completeness', detail: '⭐⭐ Comprehensive: error handling, state, security, performance, ops', icon: '🔍' },
-        { label: 'API Design Completeness', detail: '⭐ Check if LLD has all details for OpenAPI/Code generation', icon: '✅' },
+        { label: 'Code Generation Readiness', detail: 'Check if LLD has complete details for production-ready code generation' },
+        { label: 'Software Engineering Completeness', detail: 'Comprehensive: error handling, state, security, performance, ops' },
+        { label: 'API Design Completeness', detail: 'Check if LLD has all details for OpenAPI/Code generation' },
         { label: 'Integration APIs', detail: 'Focus on integration layer and external system connections' },
         { label: 'Backend APIs (BFF/Domain)', detail: 'Focus on backend architecture and API design' },
         { label: 'Frontend Architecture', detail: 'Focus on frontend components and MFE architecture' },

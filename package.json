@@ -2,7 +2,7 @@
   "name": "devex-ai-assistant",
   "displayName": "DevEx AI Assistant",
   "description": "Complete SDLC acceleration platform: LLD review, OpenAPI generation, Spring Boot code generation, deployment automation, and productivity analytics. AI-powered by GitHub Copilot.",
-  "version": "1.2.3",
+  "version": "1.2.6",
   "publisher": "CodeSamurai",
   "icon": "images/icon.png",
   "private": true,

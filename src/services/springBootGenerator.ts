@@ -4,6 +4,39 @@ import * as Handlebars from 'handlebars';
 import { logger } from '../utils/logger';
 import { TemplateProvider } from './templateProvider';
 
+// Register Handlebars helpers
+Handlebars.registerHelper('eq', function(a: any, b: any) {
+    return a === b;
+});
+
+Handlebars.registerHelper('ne', function(a: any, b: any) {
+    return a !== b;
+});
+
+Handlebars.registerHelper('lt', function(a: any, b: any) {
+    return a < b;
+});
+
+Handlebars.registerHelper('gt', function(a: any, b: any) {
+    return a > b;
+});
+
+Handlebars.registerHelper('lte', function(a: any, b: any) {
+    return a <= b;
+});
+
+Handlebars.registerHelper('gte', function(a: any, b: any) {
+    return a >= b;
+});
+
+Handlebars.registerHelper('and', function(a: any, b: any) {
+    return a && b;
+});
+
+Handlebars.registerHelper('or', function(a: any, b: any) {
+    return a || b;
+});
+
 export interface SpringBootProjectConfig {
     projectName: string;
     packageName: string;
