@@ -5,6 +5,104 @@
 
 **Business Goal:** Demonstrate measurable productivity gains from AI enablement and justify AI investment to executive leadership.
 
+---
+
+## The Problem: LLD Review Bottleneck
+
+### Current Reality (Last 6 Months)
+**Zero LLDs approved on first submission.** Every LLD requires multiple review cycles, causing significant delays in the development pipeline.
+
+### The Multi-Reviewer Challenge
+
+Our LLD review process involves **four specialized reviewers**, each examining the document through their specific lens:
+
+1. **Chief Architect** 
+   - Focus: Design patterns, architectural consistency, best practices
+   - Checks: Is the solution following established patterns? Does it align with our architectural principles?
+
+2. **Data Architect**
+   - Focus: Data pipelines, data flow, data governance, data quality
+   - Checks: How does data move through the system? Are data transformations documented? Is data lineage clear?
+
+3. **Security Architect**
+   - Focus: Security vulnerabilities, authentication, authorization, data protection, compliance
+   - Checks: Are security controls in place? Is sensitive data properly handled? Does it meet compliance requirements?
+
+4. **Integration Architect**
+   - Focus: External system integrations, APIs, service dependencies, interoperability
+   - Checks: How does this integrate with existing systems? Are APIs properly designed? Are failure scenarios handled?
+
+### The Pain Points
+
+**For Engineers:**
+- Multiple revision cycles waste 2-4 weeks per LLD
+- Feedback is often contradictory across reviewers
+- Engineers don't know what "complete" looks like until after rejection
+- Context switching between writing code and fixing LLDs
+- Demotivating to have work repeatedly sent back
+
+**For Architects:**
+- Same issues appear in every LLD (incomplete error handling, missing security considerations, vague integration details)
+- Time spent on preventable review issues
+- Backlog of LLDs waiting for review
+- Difficulty scheduling review meetings with all four architects
+
+**For the Business:**
+- **2-4 week delay** per LLD before development can start
+- Reduced team velocity and missed sprint commitments
+- Increased project costs due to rework
+- Engineer frustration and morale impact
+- **Opportunity cost**: Engineers could be coding instead of revising documentation
+
+### The Solution: AI-Powered Pre-Review
+
+**This extension acts as a "pre-flight check" before human review**, helping engineers:
+
+1. **Self-Validate Before Submission**
+   - Run AI review to catch common issues
+   - Get immediate feedback from all four architectural perspectives
+   - Understand what's missing before the formal review
+
+2. **Learn Best Practices**
+   - See examples of complete LLD sections
+   - Understand what each reviewer looks for
+   - Build knowledge for future LLDs
+
+3. **Reduce Review Cycles**
+   - Submit higher-quality LLDs on first attempt
+   - Address concerns proactively
+   - Speed up approval process
+
+4. **Focus Architect Time on High-Value Review**
+   - Architects review substance, not completeness
+   - Fewer trivial issues to point out
+   - More time for strategic architecture discussions
+
+### Expected Impact
+
+**Before AI Review:**
+- First submission → Rejected (4 different sets of feedback)
+- Second submission → Rejected (still missing items)
+- Third submission → Approved (after 3-4 weeks)
+
+**After AI Review:**
+- Engineer runs AI review locally → Gets comprehensive feedback
+- Engineer fixes issues using provided examples
+- First submission → Approved (1 week or less)
+
+**ROI:**
+- **Save 2-3 weeks per LLD** (reduced review cycles)
+- **Improve engineer satisfaction** (less rework)
+- **Free architect time** for strategic work (50% less time on basic completeness checks)
+- **Accelerate development pipeline** (start coding 2-3 weeks earlier per project)
+
+With 20 LLDs per quarter across teams:
+- **40-60 weeks saved** per quarter (2-3 weeks × 20 LLDs)
+- **10-15 engineer-months** freed up for actual development
+- **Faster time-to-market** for all projects
+
+---
+
 ## Project Requirements
 
 ### Core Functionality
