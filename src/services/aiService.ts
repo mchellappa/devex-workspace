@@ -611,6 +611,8 @@ Format the review in markdown, use emojis for visual clarity, and be specific wi
 **LLD Content:**
 ${lldContent}
 
+**Note:** The LLD content may include HTML tables with API definitions. Parse these tables carefully to extract endpoint details, parameters, and schemas.
+
 **Instructions:**
 1. Analyze the LLD and identify all API endpoints, data models, and business logic
 2. Create a complete OpenAPI 3.0.3 specification with:

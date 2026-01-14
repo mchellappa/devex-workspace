@@ -1468,6 +1468,1009 @@ export class AIService {
 
 ### Team Intelligence
 - Share learnings across teams
+- Build organizational knowledge base
+- Identify common patterns and anti-patterns
+
+---
+
+## 🔄 Making It Work Beyond VS Code: Architecture Refactoring
+
+### The Challenge
+**Current State:** Tightly coupled to VS Code APIs
+- `vscode.lm` for AI model access (GitHub Copilot)
+- `vscode.window` for UI (dialogs, progress, notifications)
+- `vscode.workspace` for file operations
+- `vscode.Uri` for file paths
+- VS Code extension context for settings/storage
+
+**The Need:** Engineers want to use these capabilities in multiple contexts:
+- **CI/CD Pipelines**: Validate LLDs automatically during PR reviews
+- **Command Line**: Review LLDs from terminal without opening VS Code
+- **Web Interface**: Non-developers (PMs, architects) reviewing LLDs
+- **API Service**: Integrate with existing dev tools and platforms
+- **GitHub Actions**: Automated LLD validation on commit
+- **IntelliJ IDEA**: ⭐ **HIGH PRIORITY** - Many engineers use IntelliJ for Java/Spring Boot (primary use case)
+- **Eclipse**: Support other IDE users
+- **Custom Tools**: Integrate into internal platforms
+
+---
+
+### Architectural Options: Decoupling Strategy
+
+#### Option 1: Core Library + Multiple Adapters (Recommended)
+
+**Architecture:**
+```
+┌─────────────────────────────────────────────┐
+│         Core Business Logic Layer           │
+│  (Pure TypeScript/Node.js, zero VS Code)   │
+├─────────────────────────────────────────────┤
+│  • LLDReviewer                             │
+│  • CodeReviewer                            │
+│  • SpringBootGenerator                     │
+│  • OpenAPIParser                           │
+│  • TemplateEngine                          │
+└─────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────┐
+│        Abstraction Interfaces Layer         │
+├─────────────────────────────────────────────┤
+│  • IAIProvider (abstract AI calls)         │
+│  • IFileSystem (abstract file ops)         │
+│  • IUserInterface (abstract UI)            │
+│  • ILogger (abstract logging)              │
+│  • IConfig (abstract settings)             │
+└─────────────────────────────────────────────┘
+                    ↓
+┌──────────────┬──────────────┬──────────────┬──────────────┬──────────────┐
+│  VS Code     │  IntelliJ    │   CLI        │   Web API    │   GitHub     │
+│  Adapter     │  Adapter     │   Adapter    │   Adapter    │   Action     │
+├──────────────┼──────────────┼──────────────┼──────────────┼──────────────┤
+│ Uses vscode  │ Uses IntelliJ│ Uses prompts │ Uses Express │ Uses @actions│
+│ APIs         │ Platform SDK │ & chalk      │ & REST       │ toolkit      │
+└──────────────┴──────────────┴──────────────┴──────────────┴──────────────┘
+```
+
+**Package Structure:**
+```
+@devex/
+├── core/                          # Pure business logic
+│   ├── reviewers/
+│   │   ├── LLDReviewer.ts
+│   │   ├── CodeReviewer.ts
+│   │   └── APIReviewer.ts
+│   ├── generators/
+│   │   ├── SpringBootGenerator.ts
+│   │   └── OpenAPIGenerator.ts
+│   └── interfaces/
+│       ├── IAIProvider.ts
+│       ├── IFileSystem.ts
+│       ├── IUserInterface.ts
+│       └── IConfig.ts
+│
+├── adapters/                      # Implementation adapters
+│   ├── vscode/
+│   │   ├── VSCodeAIProvider.ts    # Uses vscode.lm
+│   │   ├── VSCodeFileSystem.ts    # Uses vscode.workspace
+│   │   └── VSCodeUI.ts            # Uses vscode.window
+│   ├── intellij/
+│   │   ├── IntelliJAIProvider.kt  # Uses GitHub Copilot (IntelliJ API)
+│   │   ├── IntelliJFileSystem.kt  # Uses IntelliJ VFS
+│   │   ├── IntelliJUI.kt          # Uses IntelliJ dialogs/notifications
+│   │   └── plugin.xml             # IntelliJ plugin descriptor
+│   ├── cli/
+│   │   ├── OpenAIProvider.ts      # Uses OpenAI API
+│   │   ├── NodeFileSystem.ts      # Uses fs/promises
+│   │   └── CliUI.ts               # Uses inquirer/chalk
+│   └── web/
+│       ├── APIAIProvider.ts       # REST to AI service
+│       ├── StorageFileSystem.ts   # Cloud storage
+│       └── WebUI.ts               # HTTP responses
+│
+├── vscode-extension/              # VS Code specific
+│   ├── extension.ts
+│   ├── commands/
+│   └── package.json
+│
+├── intellij-plugin/               # IntelliJ IDEA plugin
+│   ├── src/main/kotlin/
+│   │   ├── DevExPlugin.kt
+│   │   ├── actions/
+│   │   └── services/
+│   ├── src/main/resources/
+│   │   └── META-INF/plugin.xml
+│   ├── build.gradle.kts
+│   └── gradle.properties
+│
+├── cli/                           # Command line tool
+│   ├── index.ts
+│   ├── commands/
+│   └── package.json
+│
+├── api/                           # REST API service
+│   ├── server.ts
+│   ├── routes/
+│   └── package.json
+│
+└── github-action/                 # GitHub Action
+    ├── action.yml
+    ├── index.ts
+    └── package.json
+```
+
+**Benefits:**
+✅ Single source of truth for business logic
+✅ Test core logic independently
+✅ Support multiple interfaces with minimal code duplication
+✅ Easy to add new adapters (IntelliJ, Vim, etc.)
+✅ Different AI providers per context (Copilot in VS Code, OpenAI in CLI)
+
+**Challenges:**
+⚠️ Requires significant refactoring
+⚠️ Must design good abstraction interfaces
+⚠️ Managing dependencies across packages
+⚠️ Testing complexity increases
+
+---
+
+#### Option 2: Extract to Separate API Service
+
+**Architecture:**
+```
+┌─────────────────────────────────────────┐
+│      DevEx AI Service (Node.js)         │
+│         REST API + WebSocket            │
+├─────────────────────────────────────────┤
+│  POST /api/review/lld                  │
+│  POST /api/review/code                 │
+│  POST /api/generate/springboot         │
+│  POST /api/generate/openapi            │
+│  WS   /ws/stream                       │
+└─────────────────────────────────────────┘
+          ↓           ↓           ↓
+┌────────────┐  ┌──────────┐  ┌──────────┐
+│  VS Code   │  │   CLI    │  │   Web    │
+│  Extension │  │   Tool   │  │   App    │
+└────────────┘  └──────────┘  └──────────┘
+```
+
+**Benefits:**
+✅ Centralized service = single deployment
+✅ Easy to add new clients
+✅ Can use different AI provider in service
+✅ Horizontal scaling for multiple users
+✅ Centralized telemetry and monitoring
+
+**Challenges:**
+⚠️ Requires infrastructure (hosting, monitoring)
+⚠️ API latency vs local execution
+⚠️ Security: API authentication, data privacy
+⚠️ Network dependency (no offline mode)
+⚠️ Cost: Server hosting and AI API calls
+
+---
+
+#### Option 3: Hybrid Model (Best of Both Worlds)
+
+**Architecture:**
+```
+┌─────────────────────────────────────────┐
+│         @devex/core (npm package)       │
+│      Shared business logic library      │
+└─────────────────────────────────────────┘
+          ↓                          ↓
+┌──────────────────┐      ┌────────────────────┐
+│  Local Clients   │      │  DevEx API Service │
+├──────────────────┤      ├────────────────────┤
+│ • VS Code        │      │ • REST API         │
+│ • CLI            │      │ • Handles complex  │
+│ • Git hooks      │      │   operations       │
+│ Uses local AI    │      │ • Team features    │
+└──────────────────┘      └────────────────────┘
+                                  ↓
+                         ┌────────────────┐
+                         │   Web Client   │
+                         │   Dashboard    │
+                         └────────────────┘
+```
+
+**Strategy:**
+- **Local operations** (fast, private): LLD review, code review, basic generation
+- **Service operations** (team features): Aggregated metrics, team dashboards, shared templates
+- Core library works both locally and as service dependency
+
+**Benefits:**
+✅ Best performance (local when possible)
+✅ Works offline for core features
+✅ Centralized team features
+✅ Flexible deployment model
+✅ Lower infrastructure costs
+
+---
+
+### Implementation Roadmap
+
+#### Phase 1: Refactor Core (4-6 weeks)
+1. **Extract business logic** from VS Code commands
+2. **Define abstraction interfaces** (IAIProvider, IFileSystem, IUI)
+3. **Create VS Code adapter** implementing interfaces
+4. **Migrate existing commands** to use abstracted core
+5. **Add comprehensive tests** for core logic
+
+**Example Interface:**
+```typescript
+// core/interfaces/IAIProvider.ts
+export interface IAIProvider {
+  callLanguageModel(prompt: string, systemPrompt?: string): Promise<AIResponse>;
+  streamLanguageModel(prompt: string, systemPrompt?: string): AsyncIterator<string>;
+}
+
+// adapters/vscode/VSCodeAIProvider.ts
+export class VSCodeAIProvider implements IAIProvider {
+  async callLanguageModel(prompt: string, systemPrompt?: string): Promise<AIResponse> {
+    const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
+    // ... existing implementation
+  }
+}
+
+// adapters/cli/OpenAIProvider.ts
+export class OpenAIProvider implements IAIProvider {
+  async callLanguageModel(prompt: string, systemPrompt?: string): Promise<AIResponse> {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4',
+      messages: [
+        { role: 'system', content: systemPrompt || '' },
+        { role: 'user', content: prompt }
+      ]
+    });
+    return { content: response.choices[0].message.content, model: 'gpt-4' };
+  }
+}
+```
+
+#### Phase 2: CLI Tool (2-3 weeks)
+1. **Create CLI package** using Commander.js
+2. **Implement CLI adapter** (OpenAI provider, Node FS, Console UI)
+3. **Add commands**: `devex review lld`, `devex review code`, `devex generate`
+4. **Package as npm global** install or binary
+5. **CI/CD integration** examples
+
+**CLI Usage:**
+```bash
+# Install
+npm install -g @devex/cli
+
+# Review LLD
+devex review lld ./docs/design.md --focus="Code Generation Readiness"
+
+# Review code
+devex review code ./src --output=./review.md
+
+# Generate Spring Boot project
+devex generate spring-boot --lld=design.md --openapi=api.yaml --output=./my-service
+
+# CI/CD usage
+devex review lld ./docs/*.md --fail-on-score=70
+```
+
+#### Phase 2.5: IntelliJ IDEA Plugin ⭐ (3-4 weeks)
+1. **Create IntelliJ plugin** using IntelliJ Platform SDK (Kotlin/Java)
+2. **Implement IntelliJ adapters**:
+   - IntelliJAIProvider (GitHub Copilot integration via IntelliJ AI Platform API)
+   - IntelliJFileSystem (uses IntelliJ VFS)
+   - IntelliJUI (uses IntelliJ dialogs, notifications, tool windows)
+3. **Port core commands** to IntelliJ actions:
+   - LLD Review (right-click on .md files)
+   - Code Review (right-click on project folders)
+   - Generate Spring Boot (project wizard)
+   - Insert deployment templates
+4. **Add tool window** for results display
+5. **Package as IntelliJ plugin** (.jar)
+6. **Publish to JetBrains Marketplace** (or internal plugin repository)
+
+**Why IntelliJ Priority:**
+- ✅ Many engineers use IntelliJ for Java/Spring Boot development
+- ✅ Spring Boot generation is our primary use case
+- ✅ Engineers without VS Code access can still benefit
+- ✅ Covers majority of enterprise Java developers
+- ✅ Can reuse same core business logic
+- ✅ **Engineers already have GitHub Copilot in IntelliJ - zero additional AI cost!**
+
+**IntelliJ Plugin Features:**
+```kotlin
+// Right-click on LLD.md → DevEx → Review LLD
+// Right-click on src/ folder → DevEx → Review Code
+// Right-click on project → DevEx → Generate Spring Boot Project
+// Tools → DevEx Dashboard (productivity metrics)
+```
+
+**Distribution Options:**
+- **Internal**: Company plugin repository
+- **Public**: JetBrains Marketplace
+- **Hybrid**: Internal for company-specific features, public for generic features
+
+**Technical Considerations:**
+- IntelliJ plugins written in Kotlin or Java
+- Uses Gradle for build
+- Different UI framework than VS Code (Swing-based)
+- Uses GitHub Copilot via IntelliJ AI Platform API (same as VS Code - leverages existing license)
+- No additional AI costs - engineers already have Copilot
+
+#### Phase 3: GitHub Action (1-2 weeks)
+1. **Create GitHub Action** wrapper around core
+2. **Implement file adapter** for GitHub workspace
+3. **Add PR comment integration**
+4. **Create workflow examples**
+
+**GitHub Action Usage:**
+```yaml
+name: LLD Review
+on:
+  pull_request:
+    paths:
+      - 'docs/**/*.md'
+
+jobs:
+  review-lld:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: devex/review-lld-action@v1
+        with:
+          lld-path: 'docs/**/*.md'
+          focus-area: 'Code Generation Readiness'
+          openai-key: ${{ secrets.OPENAI_API_KEY }}
+          post-comment: true
+          fail-on-score: 70
+```
+
+#### Phase 4: Web API (4-5 weeks)
+1. **Create Express/Fastify API**
+2. **Implement authentication** (JWT/OAuth)
+3. **Add file upload/download**
+4. **WebSocket for streaming** responses
+5. **Docker containerization**
+6. **Kubernetes manifests**
+
+**API Endpoints:**
+```
+POST   /api/v1/review/lld
+POST   /api/v1/review/code
+POST   /api/v1/generate/springboot
+POST   /api/v1/generate/openapi
+GET    /api/v1/metrics
+WS     /ws/stream
+```
+
+#### Phase 5: Web Dashboard (6-8 weeks)
+1. **React/Next.js frontend**
+2. **File upload interface**
+3. **Real-time review results**
+4. **Team metrics and analytics**
+5. **Template management**
+6. **User management**
+
+---
+
+### AI Provider Strategy
+
+**Problem:** VS Code uses `vscode.lm` (GitHub Copilot), but other contexts need different providers.
+
+**Solution Matrix:**
+
+| Context | AI Provider | Authentication | Cost |
+|---------|-------------|----------------|------|
+| VS Code Extension | GitHub Copilot via vscode.lm | User's Copilot license | ✅ Free (included) |
+| IntelliJ Plugin | GitHub Copilot via IntelliJ API | User's Copilot license | ✅ Free (included) |
+| CLI (Personal) | OpenAI API | User's API key | 💰 Pay per use |
+| CLI (Enterprise) | Azure OpenAI | Company subscription | 💰 Flat rate |
+| GitHub Action | GitHub Copilot (Actions) | Workflow token | ✅ Free (included) |
+| Web API | Azure OpenAI / AWS Bedrock | Service principal | 💰 Centralized cost |
+| Self-hosted | Ollama / Local LLM | None | ✅ Free (infrastructure only) |
+
+**Configuration Strategy:**
+```typescript
+// core/config/AIConfig.ts
+export interface AIConfig {
+  provider: 'copilot' | 'openai' | 'azure-openai' | 'bedrock' | 'ollama';
+  apiKey?: string;
+  endpoint?: string;
+  model?: string;
+}
+
+// Load from environment or config file
+const config = {
+  provider: process.env.AI_PROVIDER || 'openai',
+  apiKey: process.env.OPENAI_API_KEY,
+  model: process.env.AI_MODEL || 'gpt-4'
+};
+```
+
+---
+
+### Decision Factors
+
+**Choose Option 1 (Core Library + Adapters) if:**
+- Want maximum flexibility
+- Plan to support many interfaces (CLI, web, IDE plugins)
+- Have time for proper refactoring (4-6 weeks)
+- Need offline capability
+- Want to minimize infrastructure costs
+
+**Choose Option 2 (API Service) if:**
+- Want centralized control
+- Need team collaboration features
+- Have infrastructure budget and team
+- Security/compliance requires centralized processing
+- Want easier deployment management
+
+**Choose Option 3 (Hybrid) if:**
+- Want best of both worlds
+- Have complex requirements (personal + team features)
+- Can invest in both local and service components
+- Need flexibility in deployment models
+
+---
+
+### Recommended Approach
+
+**Start with Option 1 (Core Library), then add API service later:**
+
+**Phase 1-3: Core + CLI + GitHub Action** (8-11 weeks)
+- Refactor to abstracted core
+- Ship CLI for terminal users
+- Ship GitHub Action for CI/CD
+- Validate approach with real usage
+
+**Phase 4-5: API Service + Web Dashboard** (10-13 weeks, if needed)
+- Add API service for team features
+- Build web dashboard for non-devs
+- Keep core library for local execution
+- Best of both worlds
+
+**Total Timeline: 6 months** for complete multi-interface platform
+
+---
+
+### Migration Path for Users
+
+**Week 1-2: VS Code users (no change)**
+- Continue using extension as-is
+- Behind the scenes: refactored to use core library
+
+**Week 3-4: CLI early adopters**
+- Beta test CLI tool
+- Use in git hooks and CI/CD
+- Provide feedback
+
+**Week 5-8: IntelliJ IDEA users** ⭐
+- Install IntelliJ plugin from JetBrains Marketplace
+- Same features as VS Code: LLD review, code review, Spring Boot generation
+- **Critical for Java engineers without VS Code**
+- Target: 50+ IntelliJ users in pilot
+
+**Week 9-10: GitHub Action users**
+- Automated LLD reviews in PRs
+- Block merges on quality gates
+- Reduce manual review burden
+
+**Week 11+: Web dashboard (optional)**
+- PMs and architects can review without IDE
+- Team metrics and analytics
+- Template sharing and management
+
+---
+
+### Centralized Metrics Collection & Team Dashboard
+
+**Problem:** Need to aggregate metrics from all users (VS Code + IntelliJ) to:
+- Track team-wide productivity gains
+- Show executive dashboard with ROI
+- Identify adoption trends
+- Generate automated reports
+
+---
+
+#### Option 1: Azure Application Insights (Recommended for Enterprise)
+
+**Architecture:**
+```
+┌─────────────────┐     ┌─────────────────┐
+│  VS Code        │     │  IntelliJ       │
+│  Extension      │     │  Plugin         │
+│  (100 users)    │     │  (150 users)    │
+└────────┬────────┘     └────────┬────────┘
+         │                       │
+         │ HTTPS/TelemetryClient │
+         │                       │
+         ▼                       ▼
+    ┌────────────────────────────────┐
+    │  Azure Application Insights    │
+    │  - Automatic aggregation       │
+    │  - 90-day retention (free)     │
+    │  - Query with KQL              │
+    └────────────────────────────────┘
+                   │
+                   ▼
+    ┌────────────────────────────────┐
+    │  Power BI / Azure Dashboard    │
+    │  - Team productivity metrics   │
+    │  - Executive reports           │
+    │  - Trend analysis              │
+    └────────────────────────────────┘
+```
+
+**Implementation:**
+
+**VS Code Extension:**
+```typescript
+// src/services/telemetryService.ts
+import TelemetryReporter from '@vscode/extension-telemetry';
+
+export class TelemetryService {
+    private reporter: TelemetryReporter;
+    
+    constructor(extensionId: string, extensionVersion: string, instrumentationKey: string) {
+        this.reporter = new TelemetryReporter(extensionId, extensionVersion, instrumentationKey);
+    }
+    
+    trackFeatureUsage(feature: string, properties: Record<string, string>, measurements: Record<string, number>) {
+        this.reporter.sendTelemetryEvent(feature, properties, measurements);
+    }
+    
+    trackTimeService(feature: string, timeSavedMinutes: number, manualEstimateMinutes: number) {
+        this.reporter.sendTelemetryEvent('timeSaved', {
+            feature,
+            userId: this.getAnonymousUserId(),
+            ide: 'vscode'
+        }, {
+            timeSaved: timeSavedMinutes,
+            manualEstimate: manualEstimateMinutes,
+            efficiency: (manualEstimateMinutes - timeSavedMinutes) / manualEstimateMinutes * 100
+        });
+    }
+}
+```
+
+**IntelliJ Plugin:**
+```kotlin
+// src/main/kotlin/services/TelemetryService.kt
+import com.microsoft.applicationinsights.TelemetryClient
+import com.microsoft.applicationinsights.TelemetryConfiguration
+
+class TelemetryService(instrumentationKey: String) {
+    private val telemetryClient: TelemetryClient
+    
+    init {
+        val config = TelemetryConfiguration.createDefault()
+        config.instrumentationKey = instrumentationKey
+        telemetryClient = TelemetryClient(config)
+    }
+    
+    fun trackFeatureUsage(feature: String, properties: Map<String, String>, measurements: Map<String, Double>) {
+        telemetryClient.trackEvent(feature, properties, measurements)
+        telemetryClient.flush()
+    }
+    
+    fun trackTimeSaved(feature: String, timeSavedMinutes: Double, manualEstimateMinutes: Double) {
+        telemetryClient.trackEvent("timeSaved", mapOf(
+            "feature" to feature,
+            "userId" to getAnonymousUserId(),
+            "ide" to "intellij"
+        ), mapOf(
+            "timeSaved" to timeSavedMinutes,
+            "manualEstimate" to manualEstimateMinutes,
+            "efficiency" to (manualEstimateMinutes - timeSavedMinutes) / manualEstimateMinutes * 100
+        ))
+        telemetryClient.flush()
+    }
+}
+```
+
+**Pros:**
+- ✅ Enterprise-grade, Microsoft-managed
+- ✅ Automatic aggregation and retention
+- ✅ Built-in dashboards and alerts
+- ✅ Integrates with Power BI
+- ✅ SDKs for TypeScript and Kotlin
+- ✅ GDPR compliant
+- ✅ Free tier: 5GB/month
+
+**Cons:**
+- ⚠️ Requires Azure subscription
+- ⚠️ Data leaves company network (unless using private link)
+- ⚠️ Cost scales with usage
+
+---
+
+#### Option 2: Custom API + Database
+
+**Architecture:**
+```
+┌─────────────────┐     ┌─────────────────┐
+│  VS Code        │     │  IntelliJ       │
+│  Extension      │     │  Plugin         │
+└────────┬────────┘     └────────┬────────┘
+         │                       │
+         │ POST /api/telemetry   │
+         │                       │
+         ▼                       ▼
+    ┌────────────────────────────────┐
+    │  Telemetry API (Node.js)       │
+    │  - Receives events             │
+    │  - Validates data              │
+    │  - Batch inserts               │
+    └────────────────────────────────┘
+                   │
+                   ▼
+    ┌────────────────────────────────┐
+    │  PostgreSQL / MongoDB          │
+    │  - Store events                │
+    │  - Aggregated metrics          │
+    └────────────────────────────────┘
+                   │
+                   ▼
+    ┌────────────────────────────────┐
+    │  Dashboard API                 │
+    │  - Query aggregates            │
+    │  - Generate reports            │
+    └────────────────────────────────┘
+                   │
+                   ▼
+    ┌────────────────────────────────┐
+    │  Web Dashboard (React)         │
+    │  - Team metrics                │
+    │  - Individual stats            │
+    └────────────────────────────────┘
+```
+
+**API Implementation:**
+```typescript
+// api/src/routes/telemetry.ts
+import express from 'express';
+import { TelemetryEvent } from '../models/telemetry';
+
+const router = express.Router();
+
+router.post('/api/telemetry/event', async (req, res) => {
+    const { userId, ide, feature, properties, measurements, timestamp } = req.body;
+    
+    // Validate
+    if (!userId || !feature) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+    
+    // Store in database
+    await TelemetryEvent.create({
+        userId: hashUserId(userId), // Anonymize
+        ide,
+        feature,
+        properties,
+        measurements,
+        timestamp: timestamp || new Date()
+    });
+    
+    res.status(201).json({ success: true });
+});
+
+router.get('/api/telemetry/dashboard', async (req, res) => {
+    const { startDate, endDate } = req.query;
+    
+    // Aggregate metrics
+    const metrics = await TelemetryEvent.aggregate([
+        { $match: { timestamp: { $gte: new Date(startDate), $lte: new Date(endDate) } } },
+        { $group: {
+            _id: '$feature',
+            totalUsers: { $addToSet: '$userId' },
+            totalTimeSaved: { $sum: '$measurements.timeSaved' },
+            avgEfficiency: { $avg: '$measurements.efficiency' }
+        }}
+    ]);
+    
+    res.json(metrics);
+});
+
+export default router;
+```
+
+**Client (both IDEs):**
+```typescript
+// Shared telemetry client
+async function sendTelemetry(event: TelemetryEvent) {
+    try {
+        await fetch('https://telemetry.company.com/api/telemetry/event', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(event)
+        });
+    } catch (error) {
+        // Fail silently - don't block user
+        console.error('Telemetry failed', error);
+    }
+}
+```
+
+**Pros:**
+- ✅ Full control over data
+- ✅ Custom data model
+- ✅ Can stay within corporate network
+- ✅ No external dependencies
+
+**Cons:**
+- ⚠️ Must build and maintain API + database
+- ⚠️ Must implement aggregation logic
+- ⚠️ Must handle scaling
+- ⚠️ Infrastructure costs
+
+---
+
+#### Option 3: Hybrid - Local + Periodic Sync
+
+**Architecture:**
+```
+┌─────────────────────────────────┐
+│  VS Code Extension              │
+│  - Local JSON file              │
+│  - Accumulate 1 day of metrics  │
+└────────┬────────────────────────┘
+         │ Daily sync (background)
+         │
+         ▼
+┌─────────────────────────────────┐
+│  Central Aggregation Service    │
+│  - Collect from all users       │
+│  - Aggregate & store            │
+└────────┬────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────┐
+│  Team Dashboard                 │
+└─────────────────────────────────┘
+```
+
+**Pros:**
+- ✅ Works offline
+- ✅ Reduces network calls
+- ✅ User privacy (local first)
+
+**Cons:**
+- ⚠️ Delayed insights (not real-time)
+- ⚠️ Sync failures = lost data
+
+---
+
+#### Recommended Approach
+
+**Phase 1: Local Storage + Manual Aggregation (Current)**
+- Each user has local JSON file
+- Weekly: Engineers share anonymized stats
+- Generate monthly reports manually
+
+**Phase 2: Azure Application Insights (Quick Win)**
+- Add App Insights SDK to both IDEs
+- Automatic aggregation
+- Build Power BI dashboard
+- **Timeline: 1-2 weeks**
+
+**Phase 3: Custom Dashboard (If Needed)**
+- Build internal web dashboard
+- More customization
+- Integration with other tools
+- **Timeline: 4-6 weeks**
+
+---
+
+#### Dashboard Design
+
+**Executive View:**
+```
+┌─────────────────────────────────────────────┐
+│  DevEx AI - Team Productivity Dashboard     │
+├─────────────────────────────────────────────┤
+│                                             │
+│  Time Saved This Quarter: 2,847 hours      │
+│  Cost Savings: $284,700                     │
+│  Active Users: 247 engineers               │
+│  ROI: 1,250%                                │
+│                                             │
+│  📊 Top Features:                            │
+│  1. Spring Boot Generation - 1,200 hours   │
+│  2. LLD Review - 890 hours                 │
+│  3. Code Review - 757 hours                │
+│                                             │
+│  📈 Trend: ↑ 15% vs last quarter            │
+│                                             │
+│  [Export Report] [View Details]            │
+└─────────────────────────────────────────────┘
+```
+
+**Team Lead View:**
+```
+┌─────────────────────────────────────────────┐
+│  My Team Dashboard                          │
+├─────────────────────────────────────────────┤
+│                                             │
+│  Team: Platform Engineering (12 members)   │
+│  Adoption Rate: 92%                        │
+│  Avg Time Saved/Engineer: 8.3 hrs/week    │
+│                                             │
+│  Top Users This Week:                       │
+│  • Engineer A - 12 hours saved             │
+│  • Engineer B - 10 hours saved             │
+│                                             │
+│  Feature Usage:                             │
+│  🟢 LLD Review - 45 uses                    │
+│  🟢 Code Review - 32 uses                   │
+│  🟡 Spring Boot Gen - 8 uses                │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+
+**Individual Engineer View:**
+```
+┌─────────────────────────────────────────────┐
+│  Your Productivity Stats                    │
+├─────────────────────────────────────────────┤
+│                                             │
+│  This Month:                                │
+│  ⏱️  Time Saved: 14.2 hours                 │
+│  🚀 Most Used: LLD Review (12 times)        │
+│  📈 Efficiency: 87% avg                     │
+│                                             │
+│  Your Impact:                               │
+│  • Reviewed 8 LLDs                         │
+│  • Generated 2 Spring Boot projects        │
+│  • 5 code reviews completed                │
+│                                             │
+│  [Give Feedback] [View History]            │
+└─────────────────────────────────────────────┘
+```
+
+---
+
+#### Privacy & Compliance
+
+**Data Collection:**
+- ✅ Collect: Feature usage, time saved, anonymized user ID
+- ❌ Don't collect: Code content, LLD content, file names, personal info
+
+**Anonymization:**
+```typescript
+function getAnonymousUserId(): string {
+    // Hash machine ID + extension ID
+    const machineId = env.machineId;
+    const hash = crypto.createHash('sha256')
+        .update(machineId + 'devex-salt')
+        .digest('hex');
+    return hash.substring(0, 16);
+}
+```
+
+**User Control:**
+```json
+// Settings
+{
+  "devex.telemetry.enabled": true,  // Can be disabled
+  "devex.telemetry.level": "basic", // basic | full | none
+  "devex.telemetry.showPrompt": true // Ask on first use
+}
+```
+
+---
+
+#### Implementation Checklist
+
+**Week 1-2: Setup Application Insights**
+- [ ] Create Azure App Insights resource
+- [ ] Add SDK to VS Code extension
+- [ ] Add SDK to IntelliJ plugin
+- [ ] Configure instrumentation key
+- [ ] Test event collection
+
+**Week 3-4: Build Basic Dashboard**
+- [ ] Create Power BI workspace
+- [ ] Connect to App Insights data
+- [ ] Build executive dashboard
+- [ ] Build team lead dashboard
+- [ ] Build engineer personal view
+
+**Week 5-6: Automation & Alerts**
+- [ ] Setup weekly email reports
+- [ ] Configure alerts (low adoption, errors)
+- [ ] Create export templates
+- [ ] Document for stakeholders
+
+---
+
+### Cost Estimate (Application Insights)
+
+**Assumptions:**
+- 250 users (150 VS Code + 100 IntelliJ)
+- 10 events per user per day
+- 2,500 events/day = 75K events/month
+
+**Azure Application Insights Pricing:**
+- First 5 GB/month: Free
+- 75K events ≈ 150 MB/month
+- **Cost: $0/month** (well within free tier)
+
+**Power BI:**
+- Power BI Pro: $10/user/month
+- Need ~5 licenses (executives, managers)
+- **Cost: $50/month**
+
+**Total: ~$50/month for comprehensive telemetry + dashboards**
+
+---
+
+### Open Questions for Discussion
+
+1. **AI Provider Costs**: 
+   - Is company willing to provide Azure OpenAI subscription for CLI/API?
+   - Or should users bring their own API keys?
+
+2. **Infrastructure**:
+   - Do we have Kubernetes cluster for API service?
+   - Or start with serverless (AWS Lambda, Azure Functions)?
+
+3. **Authentication**:
+   - Use existing corporate SSO?
+   - Or separate API key management?
+
+4. **Data Privacy**:
+   - Can LLDs be sent to external AI services (OpenAI)?
+   - Or must stay within corporate network (Azure OpenAI in VPC)?
+
+5. **Support Model**:
+   - Who maintains multiple interfaces?
+   - Dedicated team or community contributions?
+
+6. **Licensing**:
+   - Keep open source (MIT)?
+   - Or create commercial version for API service?
+
+7. **Telemetry & Dashboard:** ⭐ NEW
+   - Use Azure Application Insights or build custom?
+   - Who has access to team dashboards?
+   - GDPR/Privacy review needed?
+   - Power BI licenses available?
+
+---
+
+## Summary: Making DevEx AI Work Everywhere
+
+**The Vision:** Engineers can use DevEx AI capabilities in any context they work:
+- ✅ In their IDE - **VS Code extension** (current state)
+- ✅ In their IDE - **IntelliJ IDEA plugin** ⭐ (HIGH PRIORITY - many Java engineers use IntelliJ)
+- ✅ In their terminal (CLI tool - planned)
+- ✅ In their CI/CD (GitHub Action - planned)
+- ✅ In their browser (Web dashboard - planned)
+- ✅ In their custom tools (API service - planned)
+
+**Key Insight:** Many engineers don't use VS Code - especially Java/Spring Boot developers who prefer IntelliJ IDEA. Supporting IntelliJ ensures we reach the majority of our target audience.
+
+**The Path:**
+1. **Refactor** to core library + adapters (4-6 weeks)
+2. **Ship CLI** for terminal users (2-3 weeks)
+3. **Ship IntelliJ plugin** ⭐ for Java engineers (3-4 weeks) - HIGH PRIORITY
+4. **Ship GitHub Action** for automation (1-2 weeks)
+5. **Consider API service** if team features needed (4-5 weeks)
+6. **Build web dashboard** for non-developers (6-8 weeks)
+
+**The Timeline:** 6 months for complete platform (including IntelliJ)
+
+**The Investment:** 2 engineers full-time
+
+**IntelliJ Impact:**
+- Reaches 60-70% of Java engineers who use IntelliJ
+- Enables Spring Boot generation where it's most needed
+- Same core features, different UI adapter
+- Comparable effort to CLI tool (3-4 weeks)
+
+**The Payoff:** 10x increase in reach and usage across organization
+
+---
+
 - Build company-specific best practices
 - Automate pattern detection
 - Suggest team-wide improvements

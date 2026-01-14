@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
-import * as mammoth from 'mammoth';
 import { AIService } from '../services/aiService';
 import { TelemetryService } from '../services/telemetryService';
 import { logger } from '../utils/logger';
+import { extractDocxWithImages, analyzeImagesWithVision } from '../utils/imageAnalyzer';
 
 export async function reviewLLDCommand(
     context: vscode.ExtensionContext,
@@ -67,14 +67,20 @@ export async function reviewLLDCommand(
         }
 
         let content: string;
+        let imageAnalysis = '';
 
         // Extract content based on file type
         if (fileExtension.toLowerCase() === '.docx') {
-            // For .docx files, extract text using mammoth
+            // For .docx files, extract text and images using mammoth
             try {
-                const result = await mammoth.extractRawText({ path: filePath });
-                content = result.value;
-                logger.info(`Extracted ${content.length} characters from .docx file`);
+                const result = await extractDocxWithImages(filePath);
+                content = result.content;
+                
+                // Analyze images if present
+                if (result.images.length > 0) {
+                    logger.info(`Found ${result.images.length} images, analyzing...`);
+                    imageAnalysis = await analyzeImagesWithVision(result.images, 'architecture');
+                }
             } catch (error: any) {
                 throw new Error(`Failed to read .docx file: ${error.message}`);
             }
@@ -93,7 +99,13 @@ export async function reviewLLDCommand(
                 progress.report({ increment: 0, message: 'Analyzing architecture with AI...' });
 
                 const aiService = new AIService();
-                const review = await aiService.reviewLLDAsArchitect(content, focusArea);
+                
+                // Combine content with image analysis if available
+                const fullContent = imageAnalysis ? 
+                    `${content}\n\n## Additional Information from Images/Diagrams:\n${imageAnalysis}` : 
+                    content;
+                
+                const review = await aiService.reviewLLDAsArchitect(fullContent, focusArea);
 
                 progress.report({ increment: 100, message: 'Architectural review complete!' });
 

@@ -5,6 +5,41 @@ All notable changes to the DevEx AI Assistant extension will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.7] - 2026-01-13
+
+### Enhanced
+- **DOCX Table Parsing** - Improved extraction of API definitions from DOCX files
+  - Switched from `extractRawText()` to `convertToHtml()` to preserve table structure
+  - API definitions in tables now maintain their structure (columns, rows, headers)
+  - Significantly improves accuracy when LLDs contain tabular API specifications
+  - AI can now properly parse endpoint details, methods, parameters, and schemas from tables
+
+### Added
+- **Image Analysis with Vision AI** - Extract technical information from images and diagrams in DOCX files
+  - Automatically detects and analyzes images in DOCX documents (including Lucid charts)
+  - Uses GitHub Copilot's vision-capable models (GPT-4 Vision, Claude with vision)
+  - Extracts API-relevant information from:
+    - Architecture diagrams
+    - Flow diagrams and sequence diagrams
+    - Lucid charts showing system components
+    - Database schemas and ER diagrams
+    - API endpoint tables within images
+    - Authentication/authorization flows
+  - Context-aware analysis for different commands:
+    - **Generate OpenAPI Spec**: Focuses on API endpoints, methods, data models, and integration points
+    - **Review LLD**: Focuses on architectural decisions, components, and design patterns
+    - **Summarize LLD**: General comprehensive analysis of all technical content
+  - Image analysis results are combined with text content for more complete AI understanding
+  - Gracefully handles cases where vision models are unavailable
+
+### Technical
+- Created shared `imageAnalyzer.ts` utility for reusable image extraction and analysis
+- All three LLD commands now support image analysis:
+  - `generateOpenAPISpec` (API context)
+  - `reviewLLD` (architecture context)
+  - `summarizeLLD` (general context)
+- Added explicit prompt guidance for parsing HTML tables in API specifications
+
 ## [1.2.6] - 2026-01-10
 
 ### Added
