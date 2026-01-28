@@ -71,7 +71,18 @@ export class AIService {
 
 Keep the summary clear and actionable for engineers.`;
 
-        const prompt = `Please summarize this LLD document:\n\n${lldContent}`;
+        // Truncate LLD content if too large
+        const maxLength = 60000; // ~15k tokens
+        let truncatedContent = lldContent;
+        let wasTruncated = false;
+        
+        if (lldContent.length > maxLength) {
+            truncatedContent = lldContent.substring(0, maxLength) + '\n\n[... content truncated for token limits ...]';
+            wasTruncated = true;
+            logger.warn(`LLD content truncated from ${lldContent.length} to ${maxLength} characters for summarization`);
+        }
+
+        const prompt = `Please summarize this LLD document:${wasTruncated ? ' (Note: Large document, showing first portion)' : ''}\n\n${truncatedContent}`;
 
         const response = await this.callLanguageModel(prompt, systemPrompt);
         return response.content;
@@ -106,6 +117,17 @@ Format the output as markdown for easy reading.`;
             return await this.reviewLLDForSoftwareEngineeringCompleteness(lldContent);
         }
 
+        // Truncate LLD content if too large
+        const maxLength = 55000; // ~13-14k tokens
+        let truncatedContent = lldContent;
+        let wasTruncated = false;
+        
+        if (lldContent.length > maxLength) {
+            truncatedContent = lldContent.substring(0, maxLength) + '\n\n[... content truncated for token limits ...]';
+            wasTruncated = true;
+            logger.warn(`LLD content truncated from ${lldContent.length} to ${maxLength} characters for review`);
+        }
+
         const systemPrompt = `You are a Principal Architect with 20+ years of experience reviewing system designs. Your role is to provide constructive, actionable feedback on Low-Level Design documents to help engineering teams deliver production-ready systems.
 
 Focus on:
@@ -121,50 +143,48 @@ Provide feedback that is:
 - Prioritized (critical issues first)
 - Ready to share with engineering teams`;
 
-        const prompt = `Please review this Low-Level Design document from a Principal Architect perspective.
+        const prompt = `Please review this Low-Level Design document from a Principal Architect perspective.${wasTruncated ? '\n⚠️ Note: Large document truncated. Focus on visible sections.' : ''}
 
 **Focus Area:** ${focusArea}
 
 **LLD Content:**
-${lldContent}
+${truncatedContent}
 
-Provide a comprehensive architectural review with the following sections:
+Provide a comprehensive architectural review with:
 
 ## 1. Executive Summary
-Brief overview of the design and key concerns
-
-## 2. Architectural Assessment
-- Strengths of the current design
-- Areas of concern
-- Complexity analysis
-
-## 3. Key Recommendations
-Prioritized list of actionable improvements (Critical, High, Medium priority)
-
+## 2. Architectural Assessment (Strengths, Concerns, Complexity)
+## 3. Key Recommendations (Prioritized: Critical, High, Medium)
 ## 4. Risk Analysis
-Potential risks and mitigation strategies
-
 ## 5. Focus Area Deep Dive: ${focusArea}
-Detailed review specific to the focus area
-
 ## 6. Questions for the Team
-Clarifying questions to address before implementation
 
-Format the review in clear markdown suitable for sharing with the engineering team.`;
+Format as clear markdown suitable for sharing with the engineering team.`;
 
         const response = await this.callLanguageModel(prompt, systemPrompt);
         return response.content;
     }
 
     async reviewLLDForSoftwareEngineeringCompleteness(lldContent: string): Promise<string> {
+        // Truncate LLD content if too large
+        const maxLength = 50000;
+        let truncatedContent = lldContent;
+        let wasTruncated = false;
+        
+        if (lldContent.length > maxLength) {
+            truncatedContent = lldContent.substring(0, maxLength) + '\n\n[... content truncated ...]';
+            wasTruncated = true;
+            logger.warn(`LLD truncated from ${lldContent.length} to ${maxLength} chars for SE completeness review`);
+        }
+
         const systemPrompt = `You are a Principal Engineer with 20+ years of experience in software architecture and design. Your role is to review Low-Level Design documents to ensure they cover ALL essential software engineering aspects for building production-ready systems.
 
 You must check beyond just API design - review error handling, state management, data flow, concurrency, performance, security, monitoring, and operational concerns. Your feedback should be thorough, specific, and actionable.`;
 
-        const prompt = `Review this LLD document for Software Engineering Completeness. Check if it covers all essential aspects for building robust, production-ready systems.
+        const prompt = `Review this LLD document for Software Engineering Completeness. Check if it covers all essential aspects for building robust, production-ready systems.${wasTruncated ? ' (Document truncated - focus on visible sections)' : ''}
 
 **LLD Content:**
-${lldContent}
+${truncatedContent}
 
 Provide a comprehensive engineering completeness review with the following sections:
 
@@ -349,16 +369,27 @@ Format the entire review in clear markdown with checkboxes, specific examples, a
     }
 
     async reviewLLDForAPICompleteness(lldContent: string): Promise<string> {
+        // Truncate LLD content if too large
+        const maxLength = 50000;
+        let truncatedContent = lldContent;
+        let wasTruncated = false;
+        
+        if (lldContent.length > maxLength) {
+            truncatedContent = lldContent.substring(0, maxLength) + '\n\n[... content truncated ...]';
+            wasTruncated = true;
+            logger.warn(`LLD truncated from ${lldContent.length} to ${maxLength} chars for API completeness review`);
+        }
+
         const systemPrompt = `You are a Senior API Architect specializing in RESTful API design and code generation. Your role is to review Low-Level Design documents to ensure they contain ALL necessary details for:
 1. Generating complete OpenAPI 3.0 specifications
 2. Generating production-ready Spring Boot code
 
 You must be thorough and specific, identifying exactly what's missing or unclear. Your feedback should enable engineers to update their LLD so that automated code generation can succeed.`;
 
-        const prompt = `Review this LLD document for API Design Completeness. Check if it has all necessary details for OpenAPI spec generation and Spring Boot code generation.
+        const prompt = `Review this LLD document for API Design Completeness. Check if it has all necessary details for OpenAPI spec generation and Spring Boot code generation.${wasTruncated ? ' (Document truncated)' : ''}
 
 **LLD Content:**
-${lldContent}
+${truncatedContent}
 
 Provide a detailed completeness review with the following sections:
 
@@ -847,6 +878,17 @@ CRITICAL INSTRUCTIONS:
     }
 
     async reviewLLDForCodeGenerationReadiness(lldContent: string): Promise<string> {
+        // Truncate LLD content if too large
+        const maxLength = 45000; // Slightly smaller for this detailed review
+        let truncatedContent = lldContent;
+        let wasTruncated = false;
+        
+        if (lldContent.length > maxLength) {
+            truncatedContent = lldContent.substring(0, maxLength) + '\n\n[... content truncated ...]';
+            wasTruncated = true;
+            logger.warn(`LLD truncated from ${lldContent.length} to ${maxLength} chars for code gen readiness review`);
+        }
+
         const systemPrompt = `You are a Technical Lead reviewing Low-Level Design documents to ensure they contain ALL the information engineers need to generate production-ready code using the Spring Boot generator.
 
 Your role is to verify that the LLD is complete enough for automatic code generation that produces real implementations, not TODO placeholders.
@@ -862,10 +904,10 @@ You must check if the LLD includes:
 
 Be specific about what's missing and provide actionable guidance.`;
 
-        const prompt = `Review this LLD document to determine if it's ready for production-ready code generation. Engineers will use this LLD with an automated Spring Boot generator. If the LLD lacks detail, the generator will produce TODO placeholders instead of working code.
+        const prompt = `Review this LLD document to determine if it's ready for production-ready code generation. Engineers will use this LLD with an automated Spring Boot generator. If the LLD lacks detail, the generator will produce TODO placeholders instead of working code.${wasTruncated ? ' (Large document truncated)' : ''}
 
 **LLD Content:**
-${lldContent}
+${truncatedContent}
 
 Provide a comprehensive Code Generation Readiness Review with the following sections:
 
@@ -1228,6 +1270,76 @@ See \`docs/LLD_REQUIREMENTS.md\` for detailed guidance on what to include in you
 ---
 
 *💡 Remember: The more detailed your LLD, the more production-ready code the generator will produce. Invest time in documentation now to save development time later!*`;
+
+        const response = await this.callLanguageModel(prompt, systemPrompt);
+        return response.content;
+    }
+
+    async validateLLDAgainstJira(lldContent: string, jiraIssue: any): Promise<string> {
+        const systemPrompt = `You are an expert requirements analyst and technical architect. Your role is to validate that a Low-Level Design (LLD) document comprehensively addresses all requirements specified in a Jira story.
+
+**Validation Approach:**
+- Thorough and systematic analysis
+- Clear identification of coverage gaps
+- Specific references to what's missing
+- Actionable recommendations
+- Risk assessment for incomplete coverage`;
+
+        // Truncate LLD content if too large (keep first 80% of reasonable limit)
+        const maxLLDLength = 50000; // ~12-13k tokens
+        let truncatedLLD = lldContent;
+        let wasTruncated = false;
+        
+        if (lldContent.length > maxLLDLength) {
+            truncatedLLD = lldContent.substring(0, maxLLDLength) + '\n\n[... LLD content truncated for token limits ...]';
+            wasTruncated = true;
+            logger.warn(`LLD content truncated from ${lldContent.length} to ${maxLLDLength} characters`);
+        }
+
+        // Truncate Jira description if too large
+        const maxJiraDescLength = 5000;
+        let truncatedJiraDesc = jiraIssue.description || '';
+        if (truncatedJiraDesc.length > maxJiraDescLength) {
+            truncatedJiraDesc = truncatedJiraDesc.substring(0, maxJiraDescLength) + '\n[... description truncated ...]';
+        }
+
+        const jiraContext = `
+**Jira Issue:** ${jiraIssue.key}
+**Type:** ${jiraIssue.issueType}
+**Status:** ${jiraIssue.status}
+**Priority:** ${jiraIssue.priority}
+
+**Summary:**
+${jiraIssue.summary}
+
+**Description:**
+${truncatedJiraDesc}
+
+${jiraIssue.acceptanceCriteria ? `**Acceptance Criteria:**\n${jiraIssue.acceptanceCriteria}` : ''}
+`;
+
+        const prompt = `Validate this Low-Level Design document against the Jira story requirements.
+${wasTruncated ? '\n⚠️ Note: LLD content was truncated due to length. Focus on key sections visible.\n' : ''}
+${jiraContext}
+
+**LLD Content:**
+${truncatedLLD}
+
+**Validation Requirements:**
+
+Analyze the LLD and provide:
+
+1. **Requirements Coverage** - List each Jira requirement with status: ✅ Fully Covered | ⚠️ Partially Covered | ❌ Not Covered
+
+2. **Gap Analysis** - Critical/Medium/Low priority gaps with specific details
+
+3. **Completeness Metrics** - Requirements Coverage %, Acceptance Criteria Coverage %, Overall rating, Ready for Implementation (Yes/No)
+
+4. **Top 5 Actionable Recommendations** - Prioritized list of what to add to LLD
+
+5. **Brief Summary** - Overall assessment and key next steps
+
+Keep response concise and actionable. Focus on high-impact gaps.`;
 
         const response = await this.callLanguageModel(prompt, systemPrompt);
         return response.content;

@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { AIService } from '../services/aiService';
 import { TelemetryService } from '../services/telemetryService';
+import { EmailService } from '../services/emailService';
 import { logger } from '../utils/logger';
 
 interface CodeFile {
@@ -81,7 +82,7 @@ export async function reviewCodeCommand(
             progress.report({ message: 'Generating review document...' });
 
             // Create review document
-            await createReviewDocument(reviewSummary, targetFolder, projectType);
+            const reviewFilePath = await createReviewDocument(reviewSummary, targetFolder, projectType);
 
             // Track telemetry
             const duration = Date.now() - startTime;
@@ -91,9 +92,8 @@ export async function reviewCodeCommand(
                 duration
             });
 
-            vscode.window.showInformationMessage(
-                `Code review completed! Reviewed ${filesToReview.length} files. Review document opened.`
-            );
+            // Show completion dialog with sharing options
+            await showReviewCompletionDialog(reviewSummary, reviewFilePath, path.basename(targetFolder), projectType, filesToReview.length);
         });
 
     } catch (error: any) {
@@ -216,7 +216,7 @@ function getLanguageFromExtension(ext: string): string {
     return languageMap[ext] || 'plaintext';
 }
 
-async function createReviewDocument(reviewContent: string, folderPath: string, projectType: string): Promise<void> {
+async function createReviewDocument(reviewContent: string, folderPath: string, projectType: string): Promise<string> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const folderName = path.basename(folderPath);
     const reviewFileName = `CODE_REVIEW_${folderName}_${timestamp}.md`;
@@ -238,4 +238,147 @@ async function createReviewDocument(reviewContent: string, folderPath: string, p
     // Open the review document
     const doc = await vscode.workspace.openTextDocument(reviewFilePath);
     await vscode.window.showTextDocument(doc, { preview: false });
+    
+    return reviewFilePath;
+}
+
+/**
+ * Show completion dialog with sharing options
+ */
+async function showReviewCompletionDialog(
+    reviewContent: string,
+    reviewFilePath: string,
+    projectName: string,
+    projectType: string,
+    fileCount: number
+): Promise<void> {
+    const fileName = path.basename(reviewFilePath);
+    
+    const action = await vscode.window.showInformationMessage(
+        `✅ Code Review Completed!\n\n` +
+        `📊 Project: ${projectName}\n` +
+        `📝 Files Reviewed: ${fileCount}\n` +
+        `⏱️ Time Saved: ~2 hours`,
+        'Open Review',
+        'Share via Email',
+        'Copy Summary'
+    );
+    
+    switch (action) {
+        case 'Open Review':
+            const doc = await vscode.workspace.openTextDocument(reviewFilePath);
+            await vscode.window.showTextDocument(doc);
+            break;
+            
+        case 'Share via Email':
+            await shareReviewViaEmail(reviewContent, reviewFilePath, projectName, projectType, fileCount);
+            break;
+            
+        case 'Copy Summary':
+            const summary = extractReviewSummary(reviewContent);
+            await vscode.env.clipboard.writeText(summary);
+            vscode.window.showInformationMessage('Review summary copied to clipboard!');
+            break;
+    }
+}
+
+/**
+ * Share code review via email with review content in body
+ */
+async function shareReviewViaEmail(
+    reviewContent: string,
+    reviewFilePath: string,
+    projectName: string,
+    projectType: string,
+    fileCount: number
+): Promise<void> {
+    // Extract key sections from review
+    const summary = extractReviewSummary(reviewContent);
+    const issues = extractIssuesSection(reviewContent);
+    const recommendations = extractRecommendationsSection(reviewContent);
+    
+    // Build email body with review content
+    let emailBody = `Hi Team,\n\n`;
+    emailBody += `I've completed a Principal Engineer code review for the ${projectName} project.\n\n`;
+    
+    emailBody += `📊 Review Summary:\n`;
+    emailBody += `- Project: ${projectName}\n`;
+    emailBody += `- Type: ${projectType}\n`;
+    emailBody += `- Files Reviewed: ${fileCount}\n`;
+    emailBody += `- Date: ${new Date().toLocaleDateString()}\n\n`;
+    
+    // Add summary section
+    if (summary) {
+        emailBody += `🎯 Executive Summary:\n`;
+        emailBody += summary + '\n\n';
+    }
+    
+    // Add critical issues (if any)
+    if (issues) {
+        emailBody += `⚠️ Key Issues Found:\n`;
+        emailBody += issues + '\n\n';
+    }
+    
+    // Add top recommendations
+    if (recommendations) {
+        emailBody += `💡 Top Recommendations:\n`;
+        emailBody += recommendations + '\n\n';
+    }
+    
+    emailBody += `📎 Complete review document attached.\n\n`;
+    emailBody += `Please review the detailed findings and let me know if you have any questions.\n\n`;
+    emailBody += `Best regards`;
+    
+    await EmailService.composeEmail({
+        subject: `Code Review Report: ${projectName}`,
+        body: emailBody,
+        attachmentPath: reviewFilePath,
+        includeMetrics: true
+    });
+}
+
+/**
+ * Extract summary section from review content
+ */
+function extractReviewSummary(reviewContent: string): string {
+    // Look for summary section
+    const summaryMatch = reviewContent.match(/## Summary[\s\S]*?(?=\n## |$)/i);
+    if (summaryMatch) {
+        return summaryMatch[0].replace(/## Summary\s*/i, '').trim();
+    }
+    
+    // Fallback: first paragraph
+    const lines = reviewContent.split('\n').filter(line => line.trim());
+    const firstParagraph = lines.slice(0, 3).join('\n');
+    return firstParagraph;
+}
+
+/**
+ * Extract critical issues from review
+ */
+function extractIssuesSection(reviewContent: string): string {
+    // Look for issues/problems section
+    const issuesMatch = reviewContent.match(/## (Critical Issues|Issues Found|Problems)[\s\S]*?(?=\n## |$)/i);
+    if (issuesMatch) {
+        const section = issuesMatch[0].replace(/## (Critical Issues|Issues Found|Problems)\s*/i, '').trim();
+        // Take first 5 items
+        const items = section.split('\n').filter(line => line.trim().match(/^[-*]\s/)).slice(0, 5);
+        return items.join('\n');
+    }
+    return '';
+}
+
+/**
+ * Extract recommendations from review
+ */
+function extractRecommendationsSection(reviewContent: string): string {
+    // Look for recommendations section
+    const recsMatch = reviewContent.match(/## Recommendations[\s\S]*?(?=\n## |$)/i);
+    if (recsMatch) {
+        const section = recsMatch[0].replace(/## Recommendations\s*/i, '').trim();
+        // Take first 5 items
+        const items = section.split('\n').filter(line => line.trim().match(/^[-*]\s/)).slice(0, 5);
+        return items.join('\n');
+    }
+    return '';
 }

@@ -18,9 +18,16 @@ The DevEx AI Assistant is a comprehensive VS Code extension that leverages GitHu
 ### Core Capabilities
 
 #### Design & Planning Phase
+- **Generate LLD from Requirements** ⭐ NEW: Convert requirements documents (PDF/TXT/MD) into comprehensive LLDs
+  - **Interactive conversational workflow** with clarifying questions
+  - **DOCX output** with professional formatting, diagrams, and track changes
+  - **Software engineering best practices** built-in (SOLID, security, testing, monitoring)
+  - Saves 8-12 hours on initial LLD creation
 - **LLD Review & Validation**: AI-powered architectural review with **two specialized reviews**:
   - **Software Engineering Completeness**: Comprehensive review (error handling, state management, security, performance, monitoring, operations)
   - **API Design Completeness**: Ensure LLDs have all details for OpenAPI/code generation
+  - **Code Generation Readiness**: Check if LLD contains enough detail for production-ready code
+- **Jira Integration**: Validate LLD coverage against Jira story requirements
 - **Design Documentation**: Summarize and analyze LLD documents (.md, .txt, .docx)
 - **Best Practices Guidance**: Learn engineering standards through AI feedback
 
@@ -654,19 +661,11 @@ A: Yes! This is an internal project. Contact the DevEx team or open issues on in
 
 ## Support
 
-### Internal Resources
-
-- **Slack**: #devex-ai-assistant
-- **Email**: devex-team@yourcompany.com
-- **GitHub**: https://github.com/yourorg/devex-ai-assistant (issues, discussions)
-- **Wiki**: Internal confluence/wiki page
-
 ### Getting Help
 
 1. Check this README and FAQ
 2. Search existing GitHub issues
-3. Post in Slack channel
-4. Contact DevEx team directly
+3. Post an issue in the GitHub
 
 ## Roadmap
 

@@ -1,0 +1,141 @@
+import * as vscode from 'vscode';
+import { AIService } from '../services/aiService';
+import { JiraService } from '../services/jiraService';
+import { TelemetryService } from '../services/telemetryService';
+import { logger } from '../utils/logger';
+import { extractDocxWithImages, analyzeImagesWithVision } from '../utils/imageAnalyzer';
+
+export async function validateLLDAgainstJiraCommand(
+    context: vscode.ExtensionContext,
+    telemetryService: TelemetryService,
+    fileUri?: vscode.Uri
+): Promise<void> {
+    const startTime = Date.now();
+
+    try {
+        let document: vscode.TextDocument | undefined;
+        let filePath: string;
+
+        // Get document from active editor or provided URI
+        if (fileUri) {
+            filePath = fileUri.fsPath;
+            const fileExtension = filePath.substring(filePath.lastIndexOf('.'));
+            
+            if (!['.md', '.txt', '.docx'].includes(fileExtension.toLowerCase())) {
+                vscode.window.showWarningMessage('This command supports .md, .txt, and .docx files.');
+                return;
+            }
+
+            if (fileExtension.toLowerCase() !== '.docx') {
+                document = await vscode.workspace.openTextDocument(fileUri);
+                await vscode.window.showTextDocument(document, { preview: false });
+            }
+        } else {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                vscode.window.showErrorMessage('No active editor. Please open an LLD document first.');
+                return;
+            }
+            document = editor.document;
+            filePath = document.fileName;
+            
+            const fileExtension = filePath.substring(filePath.lastIndexOf('.'));
+            
+            if (!['.md', '.txt', '.docx'].includes(fileExtension.toLowerCase())) {
+                vscode.window.showWarningMessage('This command supports .md, .txt, and .docx files.');
+                return;
+            }
+        }
+
+        const fileExtension = filePath.substring(filePath.lastIndexOf('.'));
+
+        // Initialize Jira service and fetch issue
+        const jiraService = new JiraService();
+        const issueKey = await jiraService.promptForIssueKey();
+        
+        if (!issueKey) {
+            return; // User cancelled
+        }
+
+        await vscode.window.withProgress(
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: `Validating LLD against Jira ${issueKey}`,
+                cancellable: false
+            },
+            async (progress) => {
+                progress.report({ increment: 10, message: 'Fetching Jira issue...' });
+
+                let jiraIssue;
+                try {
+                    jiraIssue = await jiraService.fetchIssue(issueKey);
+                    if (!jiraIssue) {
+                        throw new Error('Failed to fetch Jira issue');
+                    }
+                } catch (error: any) {
+                    throw new Error(`Failed to fetch Jira issue: ${error.message}`);
+                }
+
+                progress.report({ increment: 20, message: 'Extracting LLD content...' });
+
+                let content: string;
+                let imageAnalysis = '';
+
+                // Extract content based on file type
+                if (fileExtension.toLowerCase() === '.docx') {
+                    try {
+                        const result = await extractDocxWithImages(filePath);
+                        content = result.content;
+                        
+                        if (result.images.length > 0) {
+                            progress.report({ increment: 30, message: `Analyzing ${result.images.length} images...` });
+                            imageAnalysis = await analyzeImagesWithVision(result.images, 'general');
+                        }
+                    } catch (error: any) {
+                        throw new Error(`Failed to read .docx file: ${error.message}`);
+                    }
+                } else {
+                    content = document!.getText();
+                }
+
+                progress.report({ increment: 50, message: 'Validating against Jira requirements...' });
+
+                const fullContent = imageAnalysis ? 
+                    `${content}\n\n## Additional Information from Images/Diagrams:\n${imageAnalysis}` : 
+                    content;
+
+                const aiService = new AIService();
+                const validation = await aiService.validateLLDAgainstJira(fullContent, jiraIssue);
+
+                progress.report({ increment: 100, message: 'Validation complete!' });
+
+                // Show validation results in a new document
+                const validationDoc = await vscode.workspace.openTextDocument({
+                    content: `# LLD Validation Report\n\n**Jira Issue:** [${jiraIssue.key}](${jiraService['config']?.baseUrl}/browse/${jiraIssue.key}) - ${jiraIssue.summary}\n\n${validation}\n\n---\n\n*Generated by DevEx AI Assistant*`,
+                    language: 'markdown'
+                });
+
+                await vscode.window.showTextDocument(validationDoc, { viewColumn: vscode.ViewColumn.Beside });
+
+                const actualTimeSeconds = (Date.now() - startTime) / 1000;
+                telemetryService.trackEvent('validateLLDAgainstJira', {
+                    success: true,
+                    jiraIssueKey: issueKey,
+                    fileType: fileExtension,
+                    hasImages: imageAnalysis.length > 0,
+                    duration: actualTimeSeconds
+                });
+
+                logger.info(`LLD validated against Jira ${issueKey} successfully`);
+            }
+        );
+    } catch (error: any) {
+        logger.error('Failed to validate LLD against Jira', error);
+        vscode.window.showErrorMessage(`Failed to validate LLD: ${error.message}`);
+        
+        telemetryService.trackEvent('validateLLDAgainstJira', {
+            success: false,
+            error: error.message
+        });
+    }
+}

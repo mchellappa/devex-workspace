@@ -8,8 +8,14 @@ import { generateOpenAPISpecCommand } from './commands/generateOpenAPISpec';
 import { insertDeploymentTemplateCommand } from './commands/insertDeploymentTemplate';
 import { addEndpointCommand } from './commands/addEndpoint';
 import { viewDashboardCommand } from './commands/viewDashboard';
+import { validateLLDAgainstJiraCommand } from './commands/validateLLDAgainstJira';
+import { generateLLDFromRequirementsCommand } from './commands/generateLLDFromRequirements';
+import { fetchMyJiraTicketsCommand } from './commands/fetchMyJiraTickets';
+import { analyzeJiraTicketCommand } from './commands/analyzeJiraTicket';
+import { addJiraCommentCommand } from './commands/addJiraComment';
 import { TelemetryService } from './services/telemetryService';
 import { checkForUpdatesCommand } from './commands/checkForUpdates';
+import { registerChatParticipant } from './chatParticipant';
 
 let telemetryService: TelemetryService;
 
@@ -18,6 +24,9 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Initialize telemetry service
     telemetryService = new TelemetryService(context);
+
+    // Register chat participant (@askcodesamurai)
+    registerChatParticipant(context, telemetryService);
 
     // Check if Copilot is available
     checkCopilotAvailability();
@@ -80,6 +89,36 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('devex.reviewCode', (folderUri?: vscode.Uri) => 
             reviewCodeCommand(context, telemetryService, folderUri)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.validateLLDAgainstJira', (fileUri?: vscode.Uri) => 
+            validateLLDAgainstJiraCommand(context, telemetryService, fileUri)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateLLDFromRequirements', (fileUri?: vscode.Uri) => 
+            generateLLDFromRequirementsCommand(context, telemetryService, fileUri)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.fetchMyJiraTickets', () => 
+            fetchMyJiraTicketsCommand(context, telemetryService)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.analyzeJiraTicket', (issueKey?: string) => 
+            analyzeJiraTicketCommand(context, telemetryService, issueKey)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.addJiraComment', (issueKey?: string) => 
+            addJiraCommentCommand(context, telemetryService, issueKey)
         )
     );
 

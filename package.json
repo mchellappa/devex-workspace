@@ -2,7 +2,7 @@
   "name": "devex-ai-assistant",
   "displayName": "DevEx AI Assistant",
   "description": "Complete SDLC acceleration platform: LLD review, OpenAPI generation, Spring Boot code generation, deployment automation, and productivity analytics. AI-powered by GitHub Copilot.",
-  "version": "1.2.7",
+  "version": "1.3.23",
   "publisher": "CodeSamurai",
   "icon": "images/icon.png",
   "private": true,
@@ -41,6 +41,28 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "chatParticipants": [
+      {
+        "id": "askcodesamurai",
+        "name": "askcodesamurai",
+        "description": "DevEx AI Assistant - Jira ticket management and SDLC automation",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "fetch",
+            "description": "Fetch your assigned Jira tickets"
+          },
+          {
+            "name": "analyze",
+            "description": "Analyze a Jira ticket and generate TODO list"
+          },
+          {
+            "name": "comment",
+            "description": "Add selected text as a Jira comment"
+          }
+        ]
+      }
+    ],
     "commands": [
       {
         "command": "devex.generateSpringBootProject",
@@ -91,6 +113,34 @@
         "command": "devex.reviewCode",
         "title": "Review Code",
         "category": "DevEx"
+      },
+      {
+        "command": "devex.validateLLDAgainstJira",
+        "title": "Validate LLD Against Jira Story",
+        "category": "DevEx"
+      },
+      {
+        "command": "devex.generateLLDFromRequirements",
+        "title": "Generate LLD from Requirements Document",
+        "category": "DevEx"
+      },
+      {
+        "command": "devex.fetchMyJiraTickets",
+        "title": "Fetch My Jira Tickets",
+        "category": "DevEx",
+        "icon": "$(issues)"
+      },
+      {
+        "command": "devex.analyzeJiraTicket",
+        "title": "Analyze Jira Ticket (Summarize & TODO)",
+        "category": "DevEx",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "devex.addJiraComment",
+        "title": "Add Selected Text as Jira Comment",
+        "category": "DevEx",
+        "icon": "$(comment)"
       }
     ],
     "menus": {
@@ -111,9 +161,19 @@
           "group": "devex@3"
         },
         {
+          "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
+          "command": "devex.validateLLDAgainstJira",
+          "group": "devex@4"
+        },
+        {
+          "when": "resourceExtname == .pdf || resourceExtname == .txt || resourceExtname == .md",
+          "command": "devex.generateLLDFromRequirements",
+          "group": "devex@5"
+        },
+        {
           "when": "resourceExtname == .yaml || resourceExtname == .yml || resourceExtname == .json",
           "command": "devex.parseOpenAPI",
-          "group": "devex@4"
+          "group": "devex@6"
         }
       ],
       "explorer/context": [
@@ -143,9 +203,19 @@
           "group": "devex@4"
         },
         {
+          "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
+          "command": "devex.validateLLDAgainstJira",
+          "group": "devex@5"
+        },
+        {
+          "when": "resourceExtname == .pdf || resourceExtname == .txt || resourceExtname == .md",
+          "command": "devex.generateLLDFromRequirements",
+          "group": "devex@6"
+        },
+        {
           "when": "resourceExtname == .yaml || resourceExtname == .yml || resourceExtname == .json",
           "command": "devex.parseOpenAPI",
-          "group": "devex@5"
+          "group": "devex@7"
         }
       ]
     },
@@ -194,6 +264,132 @@
           "type": "string",
           "default": "",
           "description": "URL to check for extension updates (GitHub releases API)"
+        },
+        "devex.jira.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Your Jira instance base URL (e.g., https://yourcompany.atlassian.net)"
+        },
+        "devex.jira.email": {
+          "type": "string",
+          "default": "",
+          "description": "Your Jira account email address"
+        },
+        "devex.jira.apiToken": {
+          "type": "string",
+          "default": "",
+          "description": "Your Jira API token (create at https://id.atlassian.com/manage/api-tokens)"
+        },
+        "devex.lld.outputFormat": {
+          "type": "string",
+          "enum": [
+            "docx",
+            "markdown",
+            "html"
+          ],
+          "default": "docx",
+          "description": "Default output format for generated LLD documents"
+        },
+        "devex.lld.includeCoverPage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include cover page in generated DOCX documents"
+        },
+        "devex.lld.includeTableOfContents": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include auto-generated table of contents in DOCX documents"
+        },
+        "devex.lld.enableTrackChanges": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable track changes by default in generated DOCX documents"
+        },
+        "devex.lld.corporateTemplate": {
+          "type": "string",
+          "default": "",
+          "description": "Path to corporate DOCX template for LLD generation (optional)"
+        },
+        "devex.lld.embedDiagrams": {
+          "type": "boolean",
+          "default": true,
+          "description": "Embed generated diagrams directly in LLD documents"
+        },
+        "devex.lld.diagramFormat": {
+          "type": "string",
+          "enum": [
+            "png",
+            "svg"
+          ],
+          "default": "png",
+          "description": "Format for embedded diagrams in LLD documents"
+        },
+        "devex.infrastructure.hostingPlatform": {
+          "type": "string",
+          "enum": [
+            "AKS (Azure Kubernetes Service)",
+            "Azure App Service",
+            "Azure Container Instances",
+            "On-premises Kubernetes",
+            "Other"
+          ],
+          "default": "AKS (Azure Kubernetes Service)",
+          "description": "Default hosting platform for generated LLDs"
+        },
+        "devex.infrastructure.apiGateway": {
+          "type": "string",
+          "enum": [
+            "Azure APIM (API Management)",
+            "Direct exposure",
+            "Azure Application Gateway",
+            "Kong",
+            "Other"
+          ],
+          "default": "Azure APIM (API Management)",
+          "description": "Default API gateway for generated LLDs"
+        },
+        "devex.infrastructure.database": {
+          "type": "string",
+          "enum": [
+            "Azure SQL Managed Instance",
+            "Azure SQL Database",
+            "PostgreSQL",
+            "MongoDB",
+            "Cosmos DB",
+            "Other"
+          ],
+          "default": "Azure SQL Managed Instance",
+          "description": "Default database for generated LLDs"
+        },
+        "devex.infrastructure.monitoring": {
+          "type": "string",
+          "enum": [
+            "Azure Application Insights",
+            "Azure Monitor",
+            "Prometheus + Grafana",
+            "ELK Stack",
+            "Other"
+          ],
+          "default": "Azure Application Insights",
+          "description": "Default monitoring solution for generated LLDs"
+        },
+        "devex.email.defaultRecipients": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Default email recipients for sharing documents (e.g., architect@company.com). Leave empty to manually add recipients each time."
+        },
+        "devex.email.includeMetrics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include productivity metrics and extension signature in email body"
+        },
+        "devex.email.attachmentReminder": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show reminder to attach files when sharing via email"
         }
       }
     }
@@ -219,6 +415,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "docx": "^8.5.0",
     "handlebars": "^4.7.8",
     "js-yaml": "^4.1.0",
     "mammoth": "^1.11.0",

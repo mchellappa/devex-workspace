@@ -5,6 +5,392 @@ All notable changes to the DevEx AI Assistant extension will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.23] - 2026-01-28
+
+### Added
+- **@askcodesamurai Chat Participant** 💬 - Interact with DevEx commands directly in Copilot Chat!
+  - Type `@askcodesamurai` in GitHub Copilot Chat to access DevEx features
+  - **Fetch tickets**: `@askcodesamurai fetch my tickets` - View your Jira tickets in chat
+  - **Analyze ticket**: `@askcodesamurai analyze SWIFT-70243` - Generate AI analysis
+  - **Add comment**: Select text, then `@askcodesamurai add comment to SWIFT-70243` - Post to Jira
+  - Seamless integration with Copilot Chat workflow
+  - Context-aware: automatically detects selected text for comments
+  - Interactive buttons: "Open in Jira", "Open in QuickPick"
+  
+- **Add Jira Comment Command** 💭
+  - New command: "Add Selected Text as Jira Comment"
+  - Select any text in your editor and post it to a Jira ticket
+  - Perfect for adding TODO lists, notes, or analysis snippets
+  - Uses Jira API v3 comment endpoint with Atlassian Document Format (ADF)
+  - Success confirmation with "Open in Jira" action
+  
+### Enhanced
+- **JiraService**:
+  - Added `addComment(issueKey, comment)` method
+  - Posts comments using Jira Cloud API v3
+  - Formats plain text into ADF (Atlassian Document Format)
+  - Full error handling and logging
+
+## [1.3.22] - 2026-01-27
+
+### Fixed
+- **Jira Search API 410 Gone Error** 🔧 ✅ RESOLVED
+  - Migrated to `/rest/api/3/search/jql` endpoint (required by Jira Cloud)
+  - Fixed "410 Gone" error: "The requested API has been removed. Please migrate to /rest/api/3/search/jql"
+  - Jira Cloud deprecated `/rest/api/2/search` in favor of v3
+  - Now successfully fetches all assigned tickets from Jira Cloud instances
+  
+### Added
+- **Triple-Fallback Strategy for Jira Ticket Fetching** 🎯
+  - Primary: POST to `/rest/api/3/search/jql` with JQL in body
+  - Fallback 1: Agile Board API (`/rest/agile/1.0/board`) for restricted instances
+  - Fallback 2: Manual ticket key entry (fetch one-by-one)
+  - Works even when search API is disabled by Jira admin
+  
+### Removed
+- Test Jira Connection command (not needed for production)
+
+## [1.3.14] - 2026-01-26
+
+### Added
+- **Fetch My Jira Tickets** 📋 - View all assigned tickets directly in VS Code
+  - Command: "Fetch My Jira Tickets" fetches all tickets assigned to you
+  - Rich QuickPick display with status icons (🔵 In Progress, ⚪ To Do, ✅ Done)
+  - Priority indicators (🔴 Highest, 🟠 High, 🟡 Medium, 🟢 Low)
+  - Filter by status, search by keyword
+  - No browser context switching required
+  
+- **Analyze Jira Ticket** 🎯 - AI-powered story summary and TODO list generation
+  - Command: "Analyze Jira Ticket (Summarize & TODO)"
+  - Fetches ticket details from Jira automatically
+  - AI generates:
+    - Executive summary (2-3 sentences)
+    - Key points and technical requirements
+    - Testable acceptance criteria checklist
+    - Step-by-step TODO list for implementation
+    - Estimated effort (S/M/L/XL with reasoning)
+    - Potential risks and dependencies
+  - Creates markdown document with complete analysis
+  - Actions: Copy TODO list, Open in Jira, Save analysis
+  
+### Enhanced
+- **JiraService**:
+  - Added `fetchMyIssues()` - Get tickets assigned to current user
+  - Supports JQL filtering (default: assignee = currentUser() AND status != Done)
+  - Returns up to 50 tickets, sorted by updated date
+  - Extracts acceptance criteria from multiple custom field options
+  
+- **Productivity Tracking**:
+  - Fetch tickets saves ~2.5 minutes (vs opening Jira in browser)
+  - Analyze ticket saves ~12.5 minutes (vs manual analysis and TODO creation)
+  
+### Technical
+- Created `src/commands/fetchMyJiraTickets.ts` with rich QuickPick UI
+- Created `src/commands/analyzeJiraTicket.ts` with AI-powered analysis
+- Added status and priority icon helpers
+- Integrated with existing Jira configuration (no new setup needed)
+- TODO list formatted as markdown checkboxes for easy tracking
+
+## [1.3.8] - 2026-01-25
+
+### Added
+- **Email Sharing for Code Reviews** - Share review reports with review content in email body
+  - "Share via Email" option in code review completion dialog
+  - Review summary, issues, and recommendations included directly in email body
+  - Professional email template for code review reports
+  - Attachment instructions for full review document
+  
+### Enhanced
+- **Code Review Completion Dialog**:
+  - New action buttons: "Open Review", "Share via Email", "Copy Summary"
+  - Shows project info and time saved metrics
+  - Quick copy summary to clipboard for Slack/Teams
+  
+- **Smart Content Extraction**:
+  - `extractReviewSummary()` - Pulls executive summary from review
+  - `extractIssuesSection()` - Lists critical issues (top 5)
+  - `extractRecommendationsSection()` - Shows key recommendations (top 5)
+  - Email body contains actionable insights without opening attachment
+
+### Technical
+- Updated `reviewCode.ts` with email integration
+- Added `showReviewCompletionDialog()` for enhanced UX
+- Created `shareReviewViaEmail()` with intelligent content extraction
+- Review content now available in both email body and attachment
+## [1.3.8] - 2026-01-24
+
+### Added
+- **Email Sharing for Generated Documents** - Share LLDs and reports instantly
+  - "Share via Email" button in completion dialog
+  - Opens default email client (Outlook, Gmail, etc.) with pre-filled content
+  - Professional email template with document summary and highlights
+  - Attachment instructions with copy path helper
+  - No configuration required - works universally
+  
+### Enhanced
+- **EmailService** - Reusable service for all document sharing
+  - `composeEmail()` - Universal mailto: protocol (works with all email clients)
+  - `generateDocumentEmail()` - Standard template for LLD/report sharing
+  - Copy file path to clipboard for easy attachment
+  - Open folder option to quickly locate files
+  
+- **VS Code Settings for Email**:
+  - `devex.email.defaultRecipients` - Optional default recipients (e.g., architect@company.com)
+  - `devex.email.includeMetrics` - Add productivity metrics to emails
+  - `devex.email.attachmentReminder` - Show file path reminder
+  
+- **Improved Completion Dialog**:
+  - Better UX with document info (name, size, time saved)
+  - "Open Document", "Share via Email", "Validate", "Review" options
+  - Clear visual feedback with icons and metrics
+
+### Technical
+- Created `src/services/emailService.ts` for universal email integration
+- Updated `generateLLDFromRequirements.ts` with email sharing workflow
+- Enhanced `showCompletionDialog()` with new action buttons
+- Modified `openGeneratedLLD()` to return file path for sharing
+
+## [1.3.6] - 2026-01-23
+
+### Added
+- **Jira Story as Input Source** - Generate LLD directly from Jira issues
+  - Choose between file-based requirements (PDF/TXT/MD) or Jira story
+  - Enter Jira issue key to fetch story details automatically
+  - Extracts summary, description, and acceptance criteria from Jira
+  - Includes issue metadata (type, status, priority) in requirements
+  - Seamless integration with existing LLD generation workflow
+  
+### Enhanced
+- **Source Selection Dialog**:
+  - New quick pick menu to choose between file or Jira source
+  - Clear icons and descriptions for each option
+  - Validates Jira issue key format (e.g., PROJ-123)
+  - Progress notification while fetching Jira issue
+  
+- **Jira Integration**:
+  - Reuses existing Jira service configuration
+  - Converts Jira issue to structured requirements document
+  - Formats acceptance criteria as numbered list
+  - Maintains traceability with Jira issue key reference
+
+### Technical
+- Added `jira` format to RequirementsDocument interface
+- New `selectFromJira()` function for Jira issue fetching
+- Imported JiraService into generateLLDFromRequirements command
+- Jira content formatted with markdown structure for AI processing
+
+## [1.3.5] - 2026-01-23
+
+### Added
+- **Infrastructure Context for LLD Generation** - Smart defaults based on your environment
+  - New clarification questions about hosting platform, API gateway, database, and monitoring
+  - Pre-configured defaults for AKS (Azure Kubernetes Service) environments
+  - Azure APIM (API Management) as default API gateway
+  - Azure SQL Managed Instance as default database
+  - Azure Application Insights as default monitoring solution
+  - Infrastructure questions include: hosting platform, API gateway, database, monitoring tools
+  
+- **VS Code Settings for Infrastructure Defaults**:
+  - `devex.infrastructure.hostingPlatform` - Default hosting (AKS, App Service, etc.)
+  - `devex.infrastructure.apiGateway` - Default API gateway (APIM, etc.)
+  - `devex.infrastructure.database` - Default database (SQL MI, PostgreSQL, etc.)
+  - `devex.infrastructure.monitoring` - Default monitoring (App Insights, Prometheus, etc.)
+  - Settings are pre-filled in questions for faster LLD generation
+  - Press Enter to accept defaults or choose alternative options
+
+### Enhanced
+- **Infrastructure-Specific LLD Content**:
+  - AKS deployment considerations and Kubernetes best practices
+  - Azure APIM policies and API management patterns
+  - SQL Managed Instance connection strategies and optimizations
+  - Azure-specific security and authentication guidance (Managed Identity, Azure AD)
+  - Azure Monitor and Application Insights integration patterns
+  - Container orchestration and scaling strategies for AKS
+  
+- **Improved Clarification Questions**:
+  - Questions now show configured defaults in placeholder text
+  - Smart defaults reduce number of questions to answer
+  - Infrastructure category added to question types
+  - Options include Azure-specific choices (Azure AD, Managed Identity, etc.)
+
+### Technical
+- Updated AI system prompts to include infrastructure-specific guidance
+- Added intelligent default handling in question flow
+- Infrastructure configuration integrated with LLD section generation
+- Enhanced context string to include infrastructure choices
+
+## [1.3.4] - 2026-01-23
+
+### Fixed
+- **DOCX File Corruption Issue** - Fixed document generation
+  - Removed invalid numbering reference that caused file corruption
+  - Numbered lists now render as plain text with preserved formatting
+  - DOCX files now open correctly in Microsoft Word
+
+## [1.3.3] - 2026-01-23
+
+### Added
+- **DOCX Package Dependency** - Added docx library for Word document generation
+  - Installed `docx@^8.5.0` package
+  - Enables professional DOCX file creation with rich formatting
+
+### Fixed
+- **AI Content Generation** - Implemented actual LLD content generation
+  - Requirements extraction now uses AI instead of placeholders
+  - Clarification questions generated contextually by AI
+  - Each LLD section populated with comprehensive AI-generated content
+  - Follows software engineering best practices in generated content
+## [1.3.4] - 2026-01-22
+
+### Fixed
+- **Command Registration** - Properly registered "Generate LLD from Requirements Document" command
+  - Added command to package.json contributes.commands
+  - Registered command in extension.ts with telemetry support
+  - Added to editor and explorer context menus
+  - Command now appears when right-clicking on PDF, TXT, or MD files
+  - Available via Command Palette (Ctrl+Shift+P)
+
+### Added
+- **Configuration Settings** - Added 7 new settings for LLD generation customization:
+  - `devex.lld.outputFormat` - Default output format (docx/markdown/html)
+  - `devex.lld.includeCoverPage` - Include cover page in DOCX
+  - `devex.lld.includeTableOfContents` - Auto-generate TOC
+  - `devex.lld.enableTrackChanges` - Enable track changes in DOCX
+  - `devex.lld.corporateTemplate` - Path to corporate DOCX template
+  - `devex.lld.embedDiagrams` - Embed generated diagrams
+  - `devex.lld.diagramFormat` - Diagram format (png/svg)
+
+### Technical
+- Added telemetry tracking for generateLLDFromRequirements command
+- Command wrapper properly integrates with TelemetryService
+- Tracks time saved (10 hours average per LLD generation)
+
+## [1.3.1] - 2026-01-22
+
+### Added
+- **Generate LLD from Requirements Document** - Revolutionary new conversational AI feature
+  - New command: "Generate LLD from Requirements Document"
+  - Converts requirements documents (PDF, TXT, MD) into comprehensive Low-Level Design documents
+  - **Interactive Conversational Workflow**:
+    - AI extracts functional and non-functional requirements automatically
+    - Asks clarifying questions to fill gaps (authentication, architecture, error handling, etc.)
+    - Multi-turn conversation allows refinement during generation
+    - Section-by-section generation with real-time progress feedback
+  - **Multiple Output Formats**:
+    - ⭐ **DOCX (Word) - Recommended** - Professional format with rich formatting
+    - Markdown (.md) - Git-friendly, plain text
+    - HTML - Browser preview capability
+  - **DOCX Output Features**:
+    - Professional cover page with metadata
+    - Auto-generated table of contents with clickable navigation
+    - Styled headings and formatted sections
+    - Tables for API specifications and data models
+    - Embedded diagrams (Mermaid converted to PNG)
+    - Code blocks with monospace formatting
+    - Track changes enabled for review
+    - Corporate template support for branding
+    - Document properties and custom metadata
+  - **Software Engineering Best Practices Built-in**:
+    - SOLID principles and design patterns
+    - OWASP Top 10 security considerations
+    - RESTful API conventions
+    - Comprehensive error handling strategies
+    - Database design (normalization, indexes)
+    - Testing strategies (unit, integration, e2e)
+    - Performance and scalability considerations
+    - Observability (logging, metrics, tracing)
+  - **Complete LLD Structure Generated**:
+    - Executive Summary
+    - System Overview and Architecture
+    - Functional and Non-Functional Requirements
+    - API Specifications with detailed endpoints
+    - Data Models with relationships
+    - Data Flow Diagrams
+    - Error Handling and Exception strategies
+    - Security Considerations
+    - Integration Points
+    - Performance Considerations
+    - Testing Strategy
+    - Deployment Strategy
+    - Monitoring and Observability
+    - Open Questions and Risks
+  - **Time Savings**: 8-12 hours on initial LLD creation (85% faster)
+  - **Configuration Options** via VS Code settings:
+    - `devex.lld.outputFormat` - Default output format (docx/markdown/html)
+    - `devex.lld.includeCoverPage` - Include cover page in DOCX
+    - `devex.lld.includeTableOfContents` - Auto-generate TOC
+    - `devex.lld.enableTrackChanges` - Enable track changes in DOCX
+    - `devex.lld.corporateTemplate` - Path to company DOCX template
+    - `devex.lld.embedDiagrams` - Embed generated diagrams
+    - `devex.lld.diagramFormat` - Format for diagrams (png/svg)
+  - **Integration with Existing Features**:
+    - Generated LLD can be validated with "Validate LLD Against Jira Story"
+    - Can be reviewed with "Review LLD" command
+    - Can generate OpenAPI spec from the LLD
+    - Can generate Spring Boot project from the LLD
+  - **Post-Generation Options**:
+    - Save to specific location
+    - Validate completeness
+    - Run technical review
+    - Generate OpenAPI specification
+    - Convert to PDF
+
+### Technical
+- Added new command file: `generateLLDFromRequirements.ts`
+- Implemented conversational AI workflow with clarification questions
+- Added support for PDF text extraction (pdf-parse library)
+- Integrated DOCX generation library (docx npm package)
+- Added Mermaid diagram generation and PNG conversion
+- Implemented format selection UI with detailed descriptions
+- Created modular document generators for each format (DOCX, HTML, Markdown)
+- Added corporate template merge capability
+- Comprehensive error handling and user guidance
+
+### Dependencies Added
+- `docx@^8.5.0` - Professional DOCX file creation and manipulation
+- `pdf-parse@^1.1.1` - Extract text from PDF requirements documents
+- `mermaid@^10.6.0` - Generate diagrams from text definitions
+- `playwright@^1.40.0` - Render Mermaid diagrams to PNG/SVG
+
+### Documentation
+- Added comprehensive "Generate LLD from Requirements Document" user guide
+- Documented DOCX output format features and benefits
+- Created format comparison table (DOCX vs Markdown vs HTML vs PDF)
+- Added configuration examples and troubleshooting guide
+- Updated brainstorm with implementation details
+- Added ROI analysis showing 8-12 hour time savings per LLD
+
+## [1.3.0] - 2026-01-13
+- Updated Readme
+
+## [1.2.9] - 2026-01-13
+
+### Added
+- **Jira Integration** - Validate LLD completeness against Jira story requirements
+  - New command: "Validate LLD Against Jira Story"
+  - Automatically fetches Jira issue details (summary, description, acceptance criteria)
+  - AI-powered validation comparing LLD coverage against Jira requirements
+  - Comprehensive analysis including:
+    - Requirements coverage (✅ Fully Covered | ⚠️ Partially Covered | ❌ Not Covered)
+    - Gap analysis with priority levels (Critical/Medium/Low)
+    - Completeness metrics and scores
+    - Risk assessment for uncovered requirements
+    - Actionable recommendations with specific details to add
+  - Available via right-click on LLD files (.md, .txt, .docx)
+  - Supports Jira Cloud via REST API v3
+  - Configuration stored in VS Code settings:
+    - `devex.jira.baseUrl` - Your Jira instance URL
+    - `devex.jira.email` - Your Jira account email
+    - `devex.jira.apiToken` - API token for authentication
+  - Interactive configuration wizard on first use
+  - Parses Atlassian Document Format (ADF) for issue descriptions
+  - Extracts acceptance criteria from common custom fields
+  - Generates detailed validation report in markdown format
+
+### Enhanced
+- Jira validation includes image analysis for diagrams and charts
+- Validation report links directly to Jira issue for easy reference
+
 ## [1.2.7] - 2026-01-13
 
 ### Enhanced

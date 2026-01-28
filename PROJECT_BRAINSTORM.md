@@ -1,9 +1,12 @@
 # MCP Server Template Project - Brainstorming & Planning
 
 **Date:** December 30, 2025  
+**Last Updated:** January 23, 2026 (v1.3.5)  
 **Goal:** Create a template project for an MCP (Model Context Protocol) server that integrates with GitHub Copilot to accelerate engineering development.
 
 **Business Goal:** Demonstrate measurable productivity gains from AI enablement and justify AI investment to executive leadership.
+
+**Current Version:** 1.3.5 - Infrastructure context with AKS/APIM/SQL MI defaults for LLD generation
 
 ---
 
@@ -100,6 +103,1487 @@ With 20 LLDs per quarter across teams:
 - **40-60 weeks saved** per quarter (2-3 weeks × 20 LLDs)
 - **10-15 engineer-months** freed up for actual development
 - **Faster time-to-market** for all projects
+
+---
+
+## 🎯 How to Use: Jira Integration Feature
+
+### Overview
+The Jira integration validates that your Low-Level Design (LLD) document comprehensively covers all requirements specified in your Jira story. This ensures you don't miss any requirements before submitting for review.
+
+### Prerequisites
+- Active GitHub Copilot subscription
+- Access to Jira Cloud instance
+- Jira API token (we'll help you create one)
+
+### Step-by-Step Guide
+
+#### 1. First-Time Setup (One-Time Configuration)
+
+**Option A: Let the Extension Guide You (Recommended)**
+1. Right-click on any LLD file (.md, .txt, or .docx)
+2. Select **"Validate LLD Against Jira Story"**
+3. When prompted "Jira integration is not configured", click **"Configure"**
+4. Follow the prompts:
+   - **Jira URL**: Enter your Jira instance URL
+     - Example: `https://yourcompany.atlassian.net`
+   - **Email**: Your Jira account email
+     - Example: `john.doe@company.com`
+   - **API Token**: Your Jira API token (see below how to create)
+
+   
+
+**Option B: Manual Configuration**
+1. Open VS Code Settings (Ctrl+,)
+2. Search for "devex jira"
+3. Configure:
+   - `DevEx: Jira Base Url`
+   - `DevEx: Jira Email`
+   - `DevEx: Jira Api Token`
+
+**How to Create Jira API Token:**
+1. Go to https://id.atlassian.com/manage/api-tokens
+2. Click **"Create API token"**
+3. Give it a name (e.g., "VS Code DevEx Extension")
+4. Copy the token (you won't see it again!)
+5. Paste it when the extension prompts you
+
+#### 2. Validate Your LLD Against Jira Story
+
+**Step 1: Open Your LLD Document**
+- Open your LLD file in VS Code (.md, .txt, or .docx)
+- Make sure it contains your design details
+
+**Step 2: Trigger Validation**
+- **Right-click** anywhere in the LLD document
+- Select **"Validate LLD Against Jira Story"** from context menu
+- OR use Command Palette (Ctrl+Shift+P): "DevEx: Validate LLD Against Jira Story"
+
+**Step 3: Enter Jira Issue Key**
+- When prompted, enter your Jira issue key
+- Format: `PROJ-123` (project code + dash + number)
+- Example: `SPRINT-456`, `FEAT-789`
+
+**Step 4: Wait for Analysis**
+The extension will:
+1. ✅ Fetch Jira issue details (summary, description, acceptance criteria)
+2. ✅ Extract content from your LLD (including images/diagrams if .docx)
+3. ✅ Analyze images with Vision AI (Lucid charts, flow diagrams, etc.)
+4. ✅ Compare LLD against Jira requirements using AI
+5. ✅ Generate comprehensive validation report
+
+**Step 5: Review Validation Report**
+A new markdown document opens with:
+
+**📋 Requirements Coverage**
+- Table showing each Jira requirement
+- Status: ✅ Fully Covered | ⚠️ Partially Covered | ❌ Not Covered
+- Specific LLD section references
+
+**⚠️ Gap Analysis**
+- **Critical Gaps** (must address before submission)
+- **Medium Priority Gaps** (should address)
+- **Low Priority Gaps** (nice to have)
+
+**📊 Completeness Metrics**
+- Requirements Coverage: X%
+- Acceptance Criteria Coverage: X%
+- Overall Completeness: High/Medium/Low
+- Ready for Implementation: Yes/No
+
+**🎯 Actionable Recommendations**
+- Specific sections to add to your LLD
+- Details needed for each uncovered requirement
+- Priority ranking (must-have vs nice-to-have)
+- Examples of what complete coverage looks like
+
+#### 3. Fix Gaps and Re-validate
+
+**Step 1: Address the Gaps**
+- Review the recommendations in the validation report
+- Add missing details to your LLD document
+- Use the examples provided in the report
+
+**Step 2: Re-run Validation**
+- Save your updated LLD
+- Right-click → "Validate LLD Against Jira Story"
+- Enter the same Jira issue key
+- Compare new results with previous report
+
+**Step 3: Iterate Until Complete**
+- Keep adding details until you reach 90%+ coverage
+- Focus on Critical Gaps first, then Medium, then Low
+- Aim for "Ready for Implementation: Yes"
+
+### Use Cases & Workflows
+
+#### Workflow 1: Before Starting LLD
+```
+1. Create Jira story with detailed requirements
+2. Create empty LLD template
+3. Run Jira validation → See what's needed
+4. Write LLD section by section
+5. Validate again after each major section
+6. Submit when 90%+ complete
+```
+
+#### Workflow 2: After Writing LLD
+```
+1. Complete your LLD document
+2. Run Jira validation
+3. Review gaps and missing requirements
+4. Add missing details in one pass
+5. Re-validate to confirm completeness
+6. Submit for human review
+```
+
+#### Workflow 3: Combining with LLD Review
+```
+1. Write LLD document
+2. Run "Validate LLD Against Jira" → Check requirements coverage
+3. Run "Review LLD" → Check technical completeness
+4. Fix issues from both reports
+5. Submit high-quality LLD on first attempt
+```
+
+### What Gets Validated?
+
+**From Jira:**
+- ✅ Story summary and description
+- ✅ Acceptance criteria
+- ✅ Custom fields (if configured for acceptance criteria)
+- ✅ Story type and priority
+
+**From LLD:**
+- ✅ Text content (markdown, plain text)
+- ✅ HTML tables (for DOCX files)
+- ✅ Images and diagrams (Lucid charts, flow diagrams, architecture diagrams)
+- ✅ Code snippets and examples
+- ✅ API definitions and data models
+
+**Validation Checks:**
+- ✅ All Jira requirements mentioned in LLD
+- ✅ Each acceptance criterion addressed with implementation details
+- ✅ API endpoints documented if required
+- ✅ Data models defined if required
+- ✅ Error handling scenarios covered
+- ✅ Security considerations documented if required
+- ✅ Integration points specified if required
+
+### Tips for Best Results
+
+**1. Write Detailed Jira Stories**
+- Include specific acceptance criteria
+- Use numbered lists for requirements
+- Be explicit about what needs to be built
+- Add technical constraints and non-functional requirements
+
+**2. Structure Your LLD**
+- Use clear section headings
+- Match Jira requirement language in your LLD
+- Include diagrams for complex flows
+- Add API definitions in tables (for DOCX) or structured format
+
+**3. Iterate Early and Often**
+- Don't wait until LLD is "done" to validate
+- Validate after completing each major section
+- Fix gaps immediately while context is fresh
+- Use validation to guide what to write next
+
+**4. Use Images Effectively**
+- Lucid charts are analyzed automatically
+- Include flow diagrams for complex processes
+- Add architecture diagrams showing components
+- Use sequence diagrams for API interactions
+
+**5. Address Gaps Strategically**
+- Fix Critical Gaps first (blockers for implementation)
+- Then Medium Priority Gaps (important but not blocking)
+- Low Priority Gaps last (nice-to-have details)
+- Focus on actionable recommendations
+
+### Troubleshooting
+
+**Issue: "Authentication failed. Please check your Jira credentials"**
+- Verify your Jira email is correct
+- Re-create your API token at https://id.atlassian.com/manage/api-tokens
+- Update the token in VS Code settings
+- Try again
+
+**Issue: "Issue PROJ-123 not found"**
+- Verify the issue key is correct (check in Jira web)
+- Ensure you have permission to view the issue
+- Check if issue is in the same Jira instance as your baseUrl
+
+**Issue: "No vision-capable model available"**
+- Image analysis requires GitHub Copilot subscription
+- Check that GitHub Copilot extension is installed and active
+- Sign in to GitHub Copilot
+- Images will be skipped but text validation will still work
+
+**Issue: Validation report shows 0% coverage even though I covered requirements**
+- Use similar wording in LLD as in Jira story
+- Be explicit (e.g., "This addresses requirement 3.2 from the Jira story")
+- Include requirement IDs or references in your LLD
+- Add more details and context to your LLD sections
+
+### Expected Benefits
+
+**Before Jira Validation:**
+- Submit LLD → Reviewer says "You missed requirements X, Y, Z"
+- Revise LLD → Resubmit
+- Repeat 2-3 times over 2-4 weeks
+
+**After Jira Validation:**
+- Write LLD with Jira validation feedback
+- Address all gaps before submission
+- Submit LLD → Approved on first try (1 week)
+- Save 2-3 weeks per LLD
+
+**ROI Per LLD:**
+- ⏱️ Save 2-3 weeks in review cycles
+- 📈 Higher first-time approval rate
+- 😊 Less frustrating rework
+- ✨ Learn what complete LLDs look like
+- 🎯 Confidence that you covered all requirements
+
+---
+
+## 🎯 How to Use: Generate LLD from Requirements Document (NEW)
+
+### Overview
+This **conversational AI-powered feature** generates a comprehensive Low-Level Design (LLD) document from your requirements document (PDF or TXT file). The command follows all software engineering guidelines, best practices, and completeness checklists to ensure the generated LLD meets principal engineer standards. The process is interactive, allowing you to provide additional context and refine sections during generation.
+
+### Why Use This Feature?
+
+**Traditional Approach:**
+- Start with blank document
+- Manually structure all sections
+- Guess what level of detail is needed
+- Miss important sections (security, error handling, etc.)
+- Spend 8-16 hours creating initial draft
+- Multiple review cycles to add missing content
+
+**With AI-Powered LLD Generation:**
+- Start with requirements document (PDF/TXT)
+- AI extracts requirements automatically
+- Interactive conversation to clarify ambiguities
+- Generates complete LLD with all required sections
+- Follows software engineering best practices
+- Includes examples and recommendations
+- **Save 8-12 hours** on initial LLD creation
+- Submit higher quality LLDs on first try
+
+### Prerequisites
+- GitHub Copilot subscription (active)
+- Requirements document in PDF or TXT format
+- VS Code with DevEx Assistant extension installed
+
+### Output Format Options
+
+**✅ RECOMMENDED: DOCX Format (Microsoft Word)**
+
+The generated LLD will be output as a **DOCX file** (Microsoft Word format) for maximum compatibility and professional presentation.
+
+**Why DOCX?**
+
+**Enterprise Readiness:**
+- ✅ **Professional appearance** - Corporate standard format
+- ✅ **Universal compatibility** - Opens in Word, Google Docs, LibreOffice
+- ✅ **Easy sharing** - Stakeholders can review without special tools
+- ✅ **Comment & track changes** - Built-in review workflow
+- ✅ **Version control friendly** - Can be stored in SharePoint/Git
+
+**Rich Formatting:**
+- ✅ **Styled headings** - Professional heading hierarchy
+- ✅ **Tables** - Formatted API specs, data models, requirements matrices
+- ✅ **Diagrams** - Embedded architecture diagrams (PNG/SVG)
+- ✅ **Code blocks** - Syntax-highlighted code examples
+- ✅ **Table of contents** - Auto-generated, clickable navigation
+- ✅ **Headers/footers** - Page numbers, document metadata
+- ✅ **Styles** - Consistent formatting throughout
+
+**Review Process:**
+- ✅ **Architect reviews** - Can add comments directly in Word
+- ✅ **Track changes** - Review history preserved
+- ✅ **Multiple reviewers** - Chief Architect, Security Architect, etc. can review simultaneously
+- ✅ **Approval workflow** - Status can be tracked in document properties
+- ✅ **Email attachments** - Easy to send for review
+
+**Alternative Formats (Also Supported):**
+
+| Format | Pros | Cons | Use Case |
+|--------|------|------|----------|
+| **DOCX** ⭐ | Professional, universal, rich formatting | Requires Word/compatible viewer | **Recommended for formal reviews** |
+| **Markdown (.md)** | Git-friendly, plain text, easy to diff | Limited formatting, no comments | Dev team internal docs |
+| **HTML** | Web preview, rich formatting | Not standard for LLD delivery | Quick preview only |
+| **PDF** | Read-only, preserves formatting | Hard to edit, no track changes | Final approved version |
+
+**Format Selection During Generation:**
+
+When you run "Generate LLD from Requirements Document", you'll be prompted:
+
+```
+🎯 Select output format for generated LLD:
+   
+   ⭐ DOCX (Word Document) - Recommended
+      Professional format with rich formatting, tables, diagrams
+      Easy to review with comments and track changes
+      
+   📝 Markdown (.md)
+      Plain text, Git-friendly, easy to version control
+      Good for internal developer documentation
+      
+   📄 HTML Preview
+      View in browser, can save as PDF later
+      Good for quick review before finalizing
+      
+Your choice: [Select format]
+```
+
+**DOCX Generation Features:**
+
+When you select DOCX format, the generated document includes:
+
+1. **Cover Page**
+   - Project name
+   - Document title
+   - Version number
+   - Generated date
+   - Author/Generator info
+
+2. **Table of Contents**
+   - Clickable navigation
+   - Auto-updates when sections added
+   - Page numbers
+
+3. **Document Metadata**
+   - Properties (author, subject, keywords)
+   - Custom properties (Jira issue, requirements source)
+   - Review status tracking
+
+4. **Formatted Sections**
+   - Heading styles (Heading 1, 2, 3)
+   - Code blocks with monospace font
+   - Tables for API specs
+   - Embedded diagrams (Mermaid → PNG)
+   - Callout boxes for warnings/notes
+
+5. **Review Features**
+   - Comment placeholders at each section
+   - Track changes enabled by default
+   - Review status field
+
+**Technical Implementation:**
+
+```typescript
+// Output format configuration
+interface OutputFormatConfig {
+  format: 'docx' | 'markdown' | 'html' | 'pdf';
+  includeTableOfContents: boolean;
+  includeCoverPage: boolean;
+  enableTrackChanges: boolean;
+  styleTemplate?: string; // Corporate template
+  embedDiagrams: boolean;
+  diagramFormat: 'png' | 'svg';
+}
+
+// Default DOCX configuration
+const defaultDocxConfig: OutputFormatConfig = {
+  format: 'docx',
+  includeTableOfContents: true,
+  includeCoverPage: true,
+  enableTrackChanges: true,
+  embedDiagrams: true,
+  diagramFormat: 'png'
+};
+```
+
+**Libraries Required:**
+- `docx` - Create and manipulate DOCX files
+- `mermaid` - Generate diagrams from text
+- `puppeteer` or `playwright` - Convert Mermaid to PNG
+
+**Customization Options:**
+
+Users can configure output preferences in VS Code settings:
+
+```json
+{
+  "devex.lld.outputFormat": "docx",
+  "devex.lld.includeCoverPage": true,
+  "devex.lld.includeTableOfContents": true,
+  "devex.lld.enableTrackChanges": true,
+  "devex.lld.corporateTemplate": "${workspaceFolder}/templates/lld-template.docx",
+  "devex.lld.embedDiagrams": true,
+  "devex.lld.diagramFormat": "png"
+}
+```
+
+**Corporate Template Support:**
+
+Organizations can provide a DOCX template with:
+- Company logo and branding
+- Standard headers/footers
+- Pre-defined styles
+- Custom page layouts
+- Watermarks (DRAFT, CONFIDENTIAL, etc.)
+
+The extension will merge generated content into the corporate template automatically.
+
+**Post-Generation Options:**
+
+After LLD is generated in DOCX format:
+
+1. **Open in Word** - Opens automatically if Word is installed
+2. **Save to specific location** - Choose folder and filename
+3. **Convert to PDF** - For final approval/distribution
+4. **Upload to SharePoint** - If configured
+5. **Attach to Jira** - Link to original requirement story
+
+**Comparison: Before vs After**
+
+**Before (Markdown only):**
+- Generate LLD → Plain text markdown
+- Copy/paste into Word manually
+- Add formatting manually (2-3 hours)
+- Add diagrams manually
+- Create table of contents manually
+- Send for review
+
+**After (DOCX generation):**
+- Generate LLD → Professional DOCX file
+- Already formatted with styles
+- Diagrams embedded automatically
+- Table of contents auto-generated
+- Ready to send for review immediately
+- **Save 2-3 hours** on formatting
+
+**ROI Impact:**
+- ⏱️ Save 2-3 hours on manual formatting per LLD
+- 📈 Higher approval rates (professional appearance)
+- 😊 Easier review process (comments & track changes)
+- ✨ Consistent formatting across all LLDs
+- 🎯 Corporate standards compliance automatic
+
+### Step-by-Step Guide
+
+#### 1. Prepare Your Requirements Document
+
+**Supported Formats:**
+- ✅ PDF files (.pdf)
+- ✅ Text files (.txt)
+- ✅ Markdown files (.md)
+
+**What Makes a Good Requirements Document:**
+- Clear feature description and goals
+- User stories or use cases
+- Acceptance criteria
+- Technical constraints (if any)
+- Non-functional requirements (performance, security, etc.)
+- Integration requirements (if applicable)
+
+**Example Requirements Document Structure:**
+```
+Project: Payment Processing Service
+Goal: Enable credit card payments for e-commerce platform
+
+User Stories:
+1. As a customer, I want to securely enter credit card details
+2. As a customer, I want to receive payment confirmation immediately
+3. As an admin, I want to view payment transaction history
+
+Acceptance Criteria:
+- Process Visa, Mastercard, and Amex
+- PCI DSS compliance required
+- Response time < 2 seconds
+- Handle concurrent transactions
+- Integrate with existing order management system
+
+Technical Constraints:
+- Must use existing authentication service
+- Deploy to Kubernetes cluster
+- Use PostgreSQL database
+```
+
+#### 2. Generate LLD from Requirements
+
+**Method 1: Context Menu (Recommended)**
+1. Open your requirements document in VS Code
+2. Right-click anywhere in the document
+3. Select **"Generate LLD from Requirements Document"**
+
+**Method 2: Command Palette**
+1. Open Command Palette (Ctrl+Shift+P or Cmd+Shift+P)
+2. Type: "DevEx: Generate LLD from Requirements Document"
+3. Press Enter
+4. Select your requirements document when prompted
+
+**Method 3: File Explorer**
+1. Right-click on requirements document in File Explorer
+2. Select **"Generate LLD from Requirements Document"**
+
+#### 3. Interactive LLD Generation Process
+
+The extension will guide you through a **conversational workflow**:
+
+**Step 1: Requirements Analysis**
+```
+✅ Reading requirements document...
+✅ Extracting functional requirements (5 found)
+✅ Extracting non-functional requirements (3 found)
+✅ Identifying technical constraints (2 found)
+```
+
+**Step 2: Clarification Questions (Interactive)**
+
+The AI will ask clarifying questions to ensure completeness:
+
+```
+🤖 I've analyzed your requirements. I have a few questions:
+
+Q1: What authentication mechanism should be used?
+   Options: OAuth 2.0, JWT, Session-based, SAML
+   Your choice: [Type your response or select option]
+
+Q2: Should payment data be stored locally or use third-party gateway?
+   [Your response helps determine data architecture]
+
+Q3: What error handling strategy do you prefer?
+   - Retry with exponential backoff
+   - Fail fast with immediate notification
+   - Circuit breaker pattern
+   Your choice: [Type your response]
+
+Q4: Are there any specific compliance requirements beyond PCI DSS?
+   [Your response helps complete security section]
+```
+
+**How to Respond:**
+- Type your answers directly in the input box
+- Be as specific as possible
+- You can say "skip" or "not sure" if you don't know
+- The AI will use sensible defaults for skipped questions
+- You can always refine the generated LLD later
+
+**Step 3: Section-by-Section Generation**
+
+Watch the progress as the AI generates each section:
+
+```
+📝 Generating LLD sections...
+
+✅ 1. Executive Summary (2/10)
+✅ 2. System Overview (3/10)
+✅ 3. Architecture Design (4/10)
+   🔍 Detected need for API gateway pattern
+   🔍 Adding load balancer component
+✅ 4. API Specifications (5/10)
+   🔍 Generating REST endpoints from requirements
+   🔍 Creating request/response models
+✅ 5. Data Models (6/10)
+✅ 6. Error Handling Strategy (7/10)
+✅ 7. Security Considerations (8/10)
+   ⚠️ PCI DSS compliance requirements detected
+   ✅ Adding encryption at rest and in transit
+   ✅ Adding tokenization strategy
+✅ 8. Integration Points (9/10)
+✅ 9. Testing Strategy (10/10)
+
+🎉 LLD Generation Complete!
+```
+
+**Step 4: Review Generated LLD**
+
+A new markdown file opens with your generated LLD:
+
+**Generated LLD Structure:**
+- ✅ **Executive Summary** - Project overview and goals
+- ✅ **System Overview** - High-level architecture
+- ✅ **Functional Requirements** - Detailed feature descriptions
+- ✅ **Non-Functional Requirements** - Performance, security, scalability
+- ✅ **Architecture Design** - Components, layers, patterns
+- ✅ **API Specifications** - Detailed endpoint definitions
+- ✅ **Data Models** - Entity definitions with relationships
+- ✅ **Data Flow Diagrams** - How data moves through the system
+- ✅ **Error Handling & Exceptions** - Comprehensive error strategies
+- ✅ **Security Considerations** - Authentication, authorization, encryption
+- ✅ **Integration Points** - External systems and APIs
+- ✅ **Performance Considerations** - Caching, optimization, scaling
+- ✅ **Testing Strategy** - Unit, integration, and e2e test plans
+- ✅ **Deployment Strategy** - How to deploy and configure
+- ✅ **Monitoring & Observability** - Logs, metrics, alerts
+- ✅ **Open Questions & Risks** - Items needing clarification
+
+**Special Features in Generated LLD:**
+- 📊 **Mermaid Diagrams** - Auto-generated architecture and flow diagrams
+- 📋 **API Tables** - Formatted endpoint documentation
+- 🔍 **Code Examples** - Sample implementations where helpful
+- ⚠️ **Callout Boxes** - Important notes and warnings
+- ✅ **Checklists** - Validation checkpoints
+- 💡 **Best Practice Recommendations** - Inline suggestions
+
+#### 4. Refine and Iterate
+
+**Option 1: Conversational Refinement**
+
+The LLD document includes an **"Ask Follow-up Question"** button at the bottom:
+
+```markdown
+---
+## Refine This LLD
+
+Not satisfied with a section? Have more details to add?
+
+[💬 Ask Follow-up Question]
+```
+
+Click the button to start a conversation:
+
+```
+You: "Can you expand the error handling section with specific HTTP status codes?"
+
+🤖: "Certainly! I'll add detailed HTTP status code mappings..."
+[Updates LLD with expanded error handling section]
+
+You: "Add a section about rate limiting"
+
+🤖: "I'll add a comprehensive rate limiting strategy..."
+[Inserts new section with rate limiting details]
+```
+
+**Option 2: Manual Editing**
+
+- Edit the generated markdown file directly
+- Add your own sections and details
+- Remove or modify AI-generated content
+- The LLD is yours to customize
+
+**Option 3: Re-generate Specific Sections**
+
+Right-click on any section heading in the LLD:
+- Select **"Regenerate This Section"**
+- Provide additional context if needed
+- AI will rewrite that section only
+
+#### 5. Validate Against Guidelines
+
+After generation or editing, validate completeness:
+
+**Run Validation:**
+1. Right-click in the LLD document
+2. Select **"Validate LLD Completeness"**
+3. Review the validation report
+
+**Validation Checks:**
+- ✅ All required sections present
+- ✅ API endpoints properly documented
+- ✅ Error handling comprehensive
+- ✅ Security considerations addressed
+- ✅ Testing strategy defined
+- ✅ Deployment plan included
+- ✅ Monitoring strategy specified
+
+**Validation Report Example:**
+```
+📊 LLD Completeness Report
+
+Overall Score: 92% (Excellent)
+
+✅ Required Sections: 15/15 (100%)
+⚠️ API Documentation: 8/10 (80%) - Consider adding rate limiting details
+✅ Security: 10/10 (100%)
+✅ Error Handling: 9/10 (90%)
+✅ Testing: 10/10 (100%)
+
+🎯 Ready for Review: YES
+Estimated review time: 30-45 minutes (detailed review)
+```
+
+#### 6. Share and Collaborate (NEW)
+
+**Email Sharing Feature:**
+
+After generating your LLD, you can quickly share it with stakeholders via email:
+
+**Quick Share:**
+1. Click **"Share via Email"** button in the completion dialog
+2. Your default email client opens with:
+   - **Subject**: Pre-filled with "LLD Ready for Review: [Project Name]"
+   - **Body**: Summary of the LLD with key sections
+   - **Attachment**: The generated DOCX file automatically attached
+3. Add recipients and click Send
+
+**What Gets Shared:**
+```
+Subject: LLD Ready for Review: User Authentication Service
+
+Hi Team,
+
+I've completed the Low-Level Design document for User Authentication Service.
+
+📋 Document Summary:
+- Requirements Source: JIRA-1234 / requirements.txt
+- Generated: January 24, 2026
+- Format: DOCX (Microsoft Word)
+- Sections: 15 (All required sections included)
+
+🎯 Key Highlights:
+- Architecture: Microservices with AKS deployment
+- APIs: 8 REST endpoints documented
+- Security: OAuth 2.0 + Azure AD integration
+- Database: Azure SQL Managed Instance
+- Monitoring: Application Insights integration
+
+📊 Completeness: 95% (Ready for review)
+
+Please review and provide feedback. The attached document includes:
+✅ Architecture diagrams
+✅ API specifications
+✅ Security considerations
+✅ Deployment strategy
+✅ Testing plan
+
+Looking forward to your feedback!
+
+Best regards,
+[Your Name]
+
+---
+Generated by DevEx AI Assistant v1.3.6
+```
+
+**Customization Options:**
+
+In VS Code settings, configure email templates:
+
+```json
+{
+  "devex.email.defaultRecipients": ["architect@company.com", "team@company.com"],
+  "devex.email.includeMetrics": true,
+  "devex.email.includeAttachment": true,
+  "devex.email.customTemplate": "path/to/template.html"
+}
+```
+
+**Multiple Sharing Options:**
+
+The completion dialog provides several sharing options:
+
+```
+✅ LLD Generated Successfully!
+
+📄 Document: user-auth-service-lld.docx
+📊 Completeness: 95%
+⏱️ Time Saved: ~10 hours
+
+What would you like to do next?
+
+[Open Document]  [Share via Email]  [Copy Summary]  [Create Jira Comment]
+```
+
+**Advanced Sharing:**
+
+- **Copy Summary**: Copies the executive summary to clipboard (paste into Slack/Teams)
+- **Create Jira Comment**: Posts summary to associated Jira story
+- **Generate PDF**: Convert DOCX to PDF before sharing
+- **Share Link**: Upload to SharePoint/OneDrive and copy link
+
+### Technical Implementation: Universal Email Integration
+
+**How It Works (Public Extension Compatible):**
+
+The email feature uses the **mailto: protocol**, which is universally supported:
+
+```typescript
+// No authentication or configuration required!
+const subject = encodeURIComponent('LLD Ready for Review: ' + projectName);
+const body = encodeURIComponent(generateEmailBody(lldSummary));
+
+// Opens user's default email client
+vscode.env.openExternal(
+    vscode.Uri.parse(`mailto:?subject=${subject}&body=${body}`)
+);
+```
+
+**Benefits:**
+- ✅ Works with **any email client** (Outlook, Gmail, Apple Mail, Thunderbird)
+- ✅ No authentication required
+- ✅ No configuration needed
+- ✅ User stays in control (review before sending)
+- ✅ Works with corporate email policies
+- ✅ Secure (no extension access to email credentials)
+
+**Limitations & Workarounds:**
+
+| Limitation | Workaround |
+|------------|------------|
+| Cannot auto-attach files | Extension saves file and shows "Attach from: [path]" instruction |
+| Limited body length | Provides "Copy Full Summary" button for long content |
+| No HTML formatting | Uses plain text with structure (bullets, sections) |
+| No recipient list | Settings allow default recipients in subject/body |
+
+**Enhanced UX:**
+
+```
+┌─────────────────────────────────────────────┐
+│  ✅ LLD Generated Successfully!            │
+├─────────────────────────────────────────────┤
+│                                             │
+│  📄 user-auth-service-lld.docx              │
+│  📍 C:\workspace\devex\output\...           │
+│                                             │
+│  📊 Quality: 95%  ⏱️ Saved: 10 hours       │
+│                                             │
+├─────────────────────────────────────────────┤
+│  What's next?                               │
+│                                             │
+│  [Open Document]      Opens in Word         │
+│  [Share via Email]    Pre-filled email      │
+│  [Copy to Clipboard]  Paste anywhere        │
+│  [Save to OneDrive]   Upload & get link     │
+│                                             │
+│  💡 TIP: Attach file manually from:         │
+│     C:\workspace\devex\output\...           │
+└─────────────────────────────────────────────┘
+```
+
+**Email Template Structure:**
+
+```typescript
+interface EmailContent {
+    subject: string;           // "LLD Ready: [Project]"
+    body: {
+        greeting: string;      // "Hi Team,"
+        summary: string;       // Key highlights
+        metrics: string;       // Completeness %
+        attachment: string;    // File path instruction
+        nextSteps: string;     // What reviewers should do
+        signature: string;     // User name
+    };
+    attachmentPath: string;    // For user reference
+}
+```
+
+**Integration Points:**
+
+Apply email sharing to all document-generating commands:
+
+1. **Generate LLD from Requirements** ✅
+   - Share generated LLD with architects
+   - Include requirements source reference
+   
+2. **Review LLD** ✅
+   - Share review report with author
+   - Include score and recommendations
+   
+3. **Generate Spring Boot Project** ✅
+   - Share project structure with team
+   - Include setup instructions
+   
+4. **Generate OpenAPI Spec** ✅
+   - Share API documentation
+   - Include endpoint summary
+   
+5. **Validate LLD Against Jira** ✅
+   - Share validation report
+   - Include gap analysis
+
+---
+
+## 🔄 Applying Email Sharing Across All Commands
+
+### Command Integration Strategy
+
+**Step 1: Create Reusable Email Service**
+
+Create `src/services/emailService.ts`:
+
+```typescript
+import * as vscode from 'vscode';
+import * as path from 'path';
+
+export interface EmailOptions {
+    subject: string;
+    recipientHint?: string;
+    body: string;
+    attachmentPath?: string;
+    includeMetrics?: boolean;
+}
+
+export class EmailService {
+    /**
+     * Opens user's email client with pre-filled content
+     * Uses mailto: protocol - works with all email clients
+     */
+    static async composeEmail(options: EmailOptions): Promise<void> {
+        const config = vscode.workspace.getConfiguration('devex.email');
+        const defaultRecipients = config.get<string[]>('defaultRecipients', []);
+        
+        // Build email subject
+        const subject = encodeURIComponent(options.subject);
+        
+        // Build email body
+        let body = options.body;
+        
+        // Add attachment instruction if file provided
+        if (options.attachmentPath) {
+            body += `\n\n📎 ATTACHMENT:\nPlease attach the file from: ${options.attachmentPath}\n`;
+        }
+        
+        // Add metrics if enabled
+        if (options.includeMetrics && config.get('includeMetrics', true)) {
+            body += '\n\n---\nGenerated by DevEx AI Assistant\n';
+        }
+        
+        const encodedBody = encodeURIComponent(body);
+        
+        // Construct mailto: URL
+        const mailto = `mailto:${defaultRecipients.join(',')}?subject=${subject}&body=${encodedBody}`;
+        
+        // Open in default email client
+        await vscode.env.openExternal(vscode.Uri.parse(mailto));
+        
+        // Show helpful message
+        if (options.attachmentPath) {
+            const fileName = path.basename(options.attachmentPath);
+            vscode.window.showInformationMessage(
+                `Email draft opened! Don't forget to attach: ${fileName}`,
+                'Copy Path'
+            ).then(choice => {
+                if (choice === 'Copy Path') {
+                    vscode.env.clipboard.writeText(options.attachmentPath!);
+                }
+            });
+        }
+    }
+    
+    /**
+     * Generate standard email body for document sharing
+     */
+    static generateDocumentEmail(options: {
+        documentType: 'LLD' | 'Review Report' | 'API Spec' | 'Spring Boot Project';
+        projectName: string;
+        source?: string;
+        format?: string;
+        completeness?: number;
+        highlights: string[];
+        filePath: string;
+    }): EmailOptions {
+        const { documentType, projectName, source, format, completeness, highlights, filePath } = options;
+        
+        const subject = `${documentType} Ready for Review: ${projectName}`;
+        
+        let body = `Hi Team,\n\n`;
+        body += `I've completed the ${documentType} document for ${projectName}.\n\n`;
+        
+        body += `📋 Document Summary:\n`;
+        if (source) body += `- Source: ${source}\n`;
+        body += `- Generated: ${new Date().toLocaleDateString()}\n`;
+        if (format) body += `- Format: ${format}\n`;
+        if (completeness) body += `- Completeness: ${completeness}%\n`;
+        body += `\n`;
+        
+        body += `🎯 Key Highlights:\n`;
+        highlights.forEach(h => body += `- ${h}\n`);
+        body += `\n`;
+        
+        body += `Please review and provide feedback.\n\n`;
+        body += `Best regards`;
+        
+        return {
+            subject,
+            body,
+            attachmentPath: filePath,
+            includeMetrics: true
+        };
+    }
+}
+```
+
+**Step 2: Add to package.json Settings**
+
+```json
+{
+  "devex.email.defaultRecipients": {
+    "type": "array",
+    "items": { "type": "string" },
+    "default": [],
+    "description": "Default email recipients for sharing (optional)"
+  },
+  "devex.email.includeMetrics": {
+    "type": "boolean",
+    "default": true,
+    "description": "Include metrics and extension signature in emails"
+  }
+}
+```
+
+**Step 3: Integration Pattern for All Commands**
+
+Common pattern to add at the end of each command:
+
+```typescript
+// After generating/processing document
+const choice = await vscode.window.showInformationMessage(
+    `${taskName} completed successfully! ✅`,
+    'Open Document',
+    'Share via Email',
+    'Copy Summary'
+);
+
+if (choice === 'Share via Email') {
+    const emailOptions = EmailService.generateDocumentEmail({
+        documentType: 'LLD',
+        projectName: 'User Auth Service',
+        source: 'requirements.txt',
+        format: 'DOCX',
+        completeness: 95,
+        highlights: [
+            'Architecture: AKS deployment',
+            'APIs: 8 endpoints documented',
+            'Security: OAuth 2.0 integration'
+        ],
+        filePath: outputPath
+    });
+    
+    await EmailService.composeEmail(emailOptions);
+}
+```
+
+### Command-by-Command Integration
+
+#### 1. Generate LLD from Requirements (generateLLDFromRequirements.ts)
+
+**Location:** After `createDocxDocument()` completes
+
+```typescript
+// In showCompletionDialog() function
+async function showCompletionDialog(lldPath: string, outputFormat: OutputFormatConfig) {
+    const fileName = path.basename(lldPath);
+    
+    const choice = await vscode.window.showInformationMessage(
+        `✅ LLD Generated Successfully!\n\n` +
+        `📄 ${fileName}\n` +
+        `📊 All sections completed\n` +
+        `⏱️ Estimated time saved: 10 hours`,
+        'Open Document',
+        'Share via Email',
+        'Open Location'
+    );
+    
+    if (choice === 'Share via Email') {
+        await EmailService.composeEmail(
+            EmailService.generateDocumentEmail({
+                documentType: 'LLD',
+                projectName: fileName.replace('.docx', ''),
+                format: 'DOCX (Microsoft Word)',
+                completeness: 100,
+                highlights: [
+                    '15 comprehensive sections',
+                    'Architecture diagrams included',
+                    'API specifications documented',
+                    'Security considerations addressed',
+                    'Deployment strategy defined'
+                ],
+                filePath: lldPath
+            })
+        );
+    }
+}
+```
+
+#### 2. Review LLD (reviewLLD.ts)
+
+**Location:** After validation report is generated
+
+```typescript
+// After generating review report
+const choice = await vscode.window.showInformationMessage(
+    `✅ LLD Review Completed!\n\n` +
+    `📊 Score: ${reviewScore}/100\n` +
+    `⚠️ Issues Found: ${issueCount}`,
+    'View Report',
+    'Share via Email',
+    'Fix Issues'
+);
+
+if (choice === 'Share via Email') {
+    await EmailService.composeEmail({
+        subject: `LLD Review Report: ${projectName}`,
+        body: generateReviewEmailBody(reviewResult),
+        attachmentPath: reportPath,
+        includeMetrics: true
+    });
+}
+```
+
+#### 3. Generate Spring Boot Project (generateSpringBootProject.ts)
+
+```typescript
+// After project generation
+const choice = await vscode.window.showInformationMessage(
+    `✅ Spring Boot Project Generated!\n\n` +
+    `📦 ${projectName}\n` +
+    `🎯 ${endpointCount} endpoints created`,
+    'Open Project',
+    'Share via Email',
+    'Run Application'
+);
+
+if (choice === 'Share via Email') {
+    await EmailService.composeEmail(
+        EmailService.generateDocumentEmail({
+            documentType: 'Spring Boot Project',
+            projectName,
+            format: 'Maven/Gradle project',
+            highlights: [
+                `${endpointCount} REST endpoints`,
+                'OpenAPI documentation included',
+                'Docker support configured',
+                'Unit tests generated',
+                'CI/CD ready'
+            ],
+            filePath: projectPath
+        })
+    );
+}
+```
+
+#### 4. Generate OpenAPI Spec (generateOpenAPISpec.ts)
+
+```typescript
+// After OpenAPI spec generation
+const choice = await vscode.window.showInformationMessage(
+    `✅ OpenAPI Specification Generated!\n\n` +
+    `📄 ${specFileName}\n` +
+    `🌐 ${pathCount} endpoints documented`,
+    'Open Spec',
+    'Share via Email',
+    'Preview Swagger'
+);
+
+if (choice === 'Share via Email') {
+    await EmailService.composeEmail({
+        subject: `API Documentation Ready: ${apiName}`,
+        body: generateAPIEmailBody(openApiSpec),
+        attachmentPath: specPath,
+        includeMetrics: true
+    });
+}
+```
+
+#### 5. Validate LLD Against Jira (validateLLDAgainstJira.ts)
+
+```typescript
+// After validation report
+const choice = await vscode.window.showInformationMessage(
+    `✅ Validation Complete!\n\n` +
+    `📊 Coverage: ${coveragePercent}%\n` +
+    `⚠️ Gaps: ${gapCount}`,
+    'View Report',
+    'Share via Email',
+    'Update LLD'
+);
+
+if (choice === 'Share via Email') {
+    await EmailService.composeEmail({
+        subject: `LLD Validation Report: ${jiraKey}`,
+        body: generateValidationEmailBody(validationResult),
+        attachmentPath: reportPath,
+        includeMetrics: true
+    });
+}
+```
+
+#### 6. Code Review (reviewCode.ts)
+
+```typescript
+// After code review
+const choice = await vscode.window.showInformationMessage(
+    `✅ Code Review Complete!\n\n` +
+    `📊 Quality Score: ${qualityScore}/100\n` +
+    `🔍 ${issueCount} issues found`,
+    'View Report',
+    'Share via Email',
+    'Fix Issues'
+);
+
+if (choice === 'Share via Email') {
+    await EmailService.composeEmail({
+        subject: `Code Review Report: ${fileName}`,
+        body: generateCodeReviewEmailBody(reviewResult),
+        includeMetrics: true
+    });
+}
+```
+
+### VS Code Settings Schema
+
+Add to `package.json`:
+
+```json
+"configuration": {
+  "title": "DevEx Assistant - Email Integration",
+  "properties": {
+    "devex.email.defaultRecipients": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "description": "Default email recipients for sharing documents (e.g., architect@company.com). Leave empty to manually add recipients each time.",
+      "scope": "resource"
+    },
+    "devex.email.includeMetrics": {
+      "type": "boolean",
+      "default": true,
+      "description": "Include productivity metrics and extension signature in email body",
+      "scope": "resource"
+    },
+    "devex.email.attachmentReminder": {
+      "type": "boolean",
+      "default": true,
+      "description": "Show reminder to attach files when sharing via email",
+      "scope": "resource"
+    }
+  }
+}
+```
+
+### Benefits Summary
+
+**For Engineers:**
+- ✅ One-click sharing of generated documents
+- ✅ Pre-filled professional email templates
+- ✅ No manual copy-paste of summaries
+- ✅ Works with any email client
+- ✅ Maintains privacy (no credentials needed)
+
+**For Reviewers:**
+- ✅ Structured email with key information upfront
+- ✅ Clear action items
+- ✅ Professional formatting
+- ✅ Context about document source
+
+**For Extension:**
+- ✅ Universal compatibility (public extension ready)
+- ✅ No authentication/configuration barriers
+- ✅ Consistent UX across all commands
+- ✅ User maintains control (review before sending)
+
+---
+
+#### 6. Optional: Combine with Other Features
+
+**Workflow 1: Requirements → LLD → Jira Validation**
+```
+1. Generate LLD from requirements document
+2. Review and refine generated LLD
+3. Run "Validate LLD Against Jira Story" (if using Jira)
+4. Address any gaps identified
+5. Submit for human review
+```
+
+**Workflow 2: Requirements → LLD → OpenAPI → Code**
+```
+1. Generate LLD from requirements document
+2. Refine API specifications in LLD
+3. Run "Generate OpenAPI Spec from LLD"
+4. Run "Generate Spring Boot Project"
+5. Start implementing business logic
+```
+
+**Workflow 3: Requirements → LLD → Review → Deploy**
+```
+1. Generate LLD from requirements document
+2. Run "Review LLD" for technical completeness check
+3. Fix any issues identified
+4. Generate project and deployment templates
+5. Start development
+```
+
+### Software Engineering Guidelines Applied
+
+The AI follows comprehensive software engineering best practices:
+
+**Architecture Patterns:**
+- ✅ Clean Architecture / Hexagonal Architecture
+- ✅ SOLID principles
+- ✅ Design patterns (Factory, Strategy, Repository, etc.)
+- ✅ Microservices best practices
+- ✅ API-first design
+
+**Security Standards:**
+- ✅ OWASP Top 10 considerations
+- ✅ Authentication and authorization strategies
+- ✅ Data encryption (at rest and in transit)
+- ✅ Input validation and sanitization
+- ✅ Security headers and CORS policies
+- ✅ Secrets management
+
+**API Design Standards:**
+- ✅ RESTful API conventions
+- ✅ Proper HTTP methods and status codes
+- ✅ Versioning strategy
+- ✅ Pagination and filtering
+- ✅ Rate limiting
+- ✅ API documentation (OpenAPI/Swagger)
+
+**Data Management:**
+- ✅ Database design (normalization, indexes)
+- ✅ Data validation and constraints
+- ✅ Migration strategy
+- ✅ Backup and recovery
+- ✅ Data retention policies
+
+**Error Handling:**
+- ✅ Comprehensive exception hierarchy
+- ✅ Proper error messages
+- ✅ Logging and monitoring
+- ✅ Graceful degradation
+- ✅ Retry mechanisms
+
+**Testing Standards:**
+- ✅ Unit test strategy
+- ✅ Integration test approach
+- ✅ End-to-end test scenarios
+- ✅ Test coverage targets
+- ✅ Mock and stub strategies
+
+**Performance & Scalability:**
+- ✅ Caching strategies
+- ✅ Connection pooling
+- ✅ Asynchronous processing
+- ✅ Load balancing
+- ✅ Horizontal scaling considerations
+
+**Observability:**
+- ✅ Structured logging
+- ✅ Metrics and monitoring
+- ✅ Distributed tracing
+- ✅ Health check endpoints
+- ✅ Alert definitions
+
+### Tips for Best Results
+
+**1. Provide Detailed Requirements**
+- Include user stories with acceptance criteria
+- Specify technical constraints upfront
+- Mention integration requirements
+- List non-functional requirements explicitly
+
+**2. Engage in the Conversation**
+- Answer clarifying questions thoroughly
+- Provide examples when helpful
+- Ask the AI to elaborate on unclear sections
+- Don't skip important questions
+
+**3. Review and Customize**
+- Don't treat generated LLD as final
+- Add domain-specific knowledge
+- Incorporate team standards
+- Remove irrelevant sections
+
+**4. Iterate Incrementally**
+- Start with core requirements
+- Generate initial LLD
+- Add more details through conversation
+- Regenerate sections as needed
+
+**5. Combine with Validation**
+- Always run completeness validation
+- Use Jira validation if applicable
+- Run technical review on generated LLD
+- Fix gaps before submitting
+
+### Expected Benefits
+
+**Time Savings:**
+- ⏱️ **Initial LLD Creation**: 8-12 hours → 1-2 hours (85% faster)
+- ⏱️ **Iteration Cycles**: Fewer revisions needed
+- ⏱️ **Review Time**: Architects spend less time on basics
+
+**Quality Improvements:**
+- ✅ **Completeness**: All required sections included automatically
+- ✅ **Consistency**: Follows best practices systematically
+- ✅ **Standards**: Built-in software engineering guidelines
+- ✅ **Examples**: Includes code snippets and patterns
+
+**Learning Opportunity:**
+- 📚 See what complete LLDs look like
+- 📚 Learn best practices through examples
+- 📚 Understand software engineering patterns
+- 📚 Build better LLDs independently over time
+
+**ROI Per LLD:**
+- ⏱️ Save 8-12 hours on initial creation
+- ⏱️ Save 2-3 weeks in review cycles (higher first-time approval)
+- 📈 90%+ completeness on first draft
+- 😊 Less frustrating manual work
+- 🎯 Confidence in following all guidelines
+
+### Use Cases
+
+**Use Case 1: New Microservice**
+```
+Requirements: Payment processing microservice for e-commerce
+Result: Complete LLD with API specs, data models, security, deployment
+Time Saved: 10 hours
+```
+
+**Use Case 2: Feature Addition**
+```
+Requirements: Add two-factor authentication to existing login service
+Result: Detailed design for 2FA integration with existing architecture
+Time Saved: 6 hours
+```
+
+**Use Case 3: System Integration**
+```
+Requirements: Integrate with third-party shipping API
+Result: LLD for integration layer, error handling, data mapping
+Time Saved: 8 hours
+```
+
+**Use Case 4: Data Migration**
+```
+Requirements: Migrate from MongoDB to PostgreSQL
+Result: Migration strategy LLD with rollback plan and validation
+Time Saved: 12 hours
+```
+
+### Troubleshooting
+
+**Issue: "Unable to extract requirements from PDF"**
+- Ensure PDF is text-based (not scanned image)
+- Try converting PDF to TXT first
+- Check if PDF has copy protection
+- Use markdown format for best results
+
+**Issue: "Generated LLD is too generic"**
+- Provide more detailed requirements upfront
+- Answer all clarifying questions
+- Use conversational refinement to add specifics
+- Provide domain-specific examples in requirements
+
+**Issue: "Missing sections in generated LLD"**
+- Run "Validate LLD Completeness" to identify gaps
+- Use "Regenerate This Section" on missing parts
+- Check if requirements mentioned that aspect
+- Manually add section and ask AI to populate it
+
+**Issue: "AI asks too many questions"**
+- You can skip questions and proceed
+- Default assumptions will be used
+- Refine sections later through conversation
+- More questions = more tailored LLD
+
+**Issue: "Generation is slow"**
+- Large requirements documents take longer
+- Complex systems require more processing
+- Progress is shown during generation
+- You can cancel and try with smaller scope
 
 ---
 
@@ -222,10 +1706,11 @@ No API key management! If your engineers already have GitHub Copilot, they can u
 
 ### 📋 Requirements & Planning Phase
 1. `Summarize LLD` - AI-powered summary of current LLD document
-2. `Review Architecture Document` - Analyze HLD/LLD for completeness, best practices
-3. `Analyze Requirements` - Extract user stories, acceptance criteria
-4. `Generate Test Cases from Requirements` - Create test scenarios from LLD
-5. `Validate Design Completeness` - Check LLD/HLD against checklist
+2. **`Generate LLD from Requirements Document` - ⭐ NEW: Interactive LLD generation from PDF/TXT with conversational refinement**
+3. `Review Architecture Document` - Analyze HLD/LLD for completeness, best practices
+4. `Analyze Requirements` - Extract user stories, acceptance criteria
+5. `Generate Test Cases from Requirements` - Create test scenarios from LLD
+6. `Validate Design Completeness` - Check LLD/HLD against checklist
 
 ### 🎨 Design Phase
 6. `Analyze Sequence Diagram` - Extract flow, actors, interactions
@@ -456,6 +1941,57 @@ devex-workspace/
 - **@azure-rest/ai-inference** - GitHub Models API client
 - **swagger-parser** - OpenAPI parsing and validation
 - **@vscode/extension-telemetry** - Productivity tracking and analytics
+- **docx** - Create and manipulate DOCX files (for LLD generation)
+- **pdf-parse** - Extract text from PDF files (for requirements parsing)
+- **mermaid** - Generate diagrams from text definitions
+- **puppeteer** or **playwright** - Convert Mermaid diagrams to PNG/SVG
+
+**NPM Installation Commands:**
+```bash
+# Core dependencies
+npm install @azure-rest/ai-inference swagger-parser
+npm install @vscode/extension-telemetry
+
+# Document generation (DOCX output)
+npm install docx pdf-parse
+
+# Diagram generation
+npm install mermaid puppeteer
+# OR use playwright for lighter footprint
+npm install mermaid playwright
+
+# Development dependencies
+npm install --save-dev @types/vscode @types/node
+npm install --save-dev @types/pdf-parse
+```
+
+**Package.json Configuration:**
+```json
+{
+  "name": "devex-assistant",
+  "displayName": "DevEx Assistant",
+  "description": "AI-powered development assistant with LLD generation",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "dependencies": {
+    "@azure-rest/ai-inference": "^1.0.0",
+    "swagger-parser": "^10.0.0",
+    "@vscode/extension-telemetry": "^0.9.0",
+    "docx": "^8.5.0",
+    "pdf-parse": "^1.1.1",
+    "mermaid": "^10.6.0",
+    "playwright": "^1.40.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "@types/pdf-parse": "^1.1.0",
+    "typescript": "^5.3.0"
+  }
+}
+```
 
 **AI Models:**
 - **GitHub Models** (free tier) - gpt-4o, gpt-4o-mini
@@ -1043,6 +2579,7 @@ Engineers can customize their own settings without affecting defaults.
 **New Commands to Add:**
 ```typescript
 // src/commands/planning/
+- generateLLDFromRequirements.ts // ⭐ NEW: Generate LLD from PDF/TXT with conversational AI
 - reviewArchitecture.ts       // Analyze HLD/LLD completeness
 - analyzeRequirements.ts       // Extract user stories
 - generateTestCases.ts         // Create test scenarios from requirements
@@ -2502,6 +4039,477 @@ function getAnonymousUserId(): string {
 2. Achieve 300+ active users
 3. Document 1000+ hours saved
 4. Prepare for enterprise-wide launch
+
+---
+
+## 🎫 New Feature: Jira Ticket Management & AI-Powered Comments
+
+### Problem Statement
+
+**Current Pain Points:**
+- Engineers spend time context-switching between VS Code and Jira
+- Updating Jira tickets is manual and time-consuming
+- Lack of visibility into assigned tickets while coding
+- No automated way to add technical updates to tickets
+- Missing productivity metric: time spent on Jira vs. coding
+
+**The Opportunity:**
+Bring Jira into the developer workflow - fetch tickets, view details, and add AI-generated comments directly from VS Code without breaking flow.
+
+---
+
+### Feature Overview
+
+**Three Core Commands:**
+
+1. **Fetch My Jira Tickets** 📋
+   - View all assigned tickets in VS Code
+   - Filter by status (To Do, In Progress, Done)
+   - Quick peek without opening browser
+   - Cached locally for offline access
+
+2. **View Jira Ticket Details** 🔍
+   - Show full ticket in VS Code panel
+   - Summary, description, acceptance criteria
+   - Comments and attachments
+   - Related issues and sub-tasks
+   - Open in browser option
+
+3. **Add AI-Powered Comment** 💬
+   - Generate technical updates automatically
+   - Code changes summary
+   - Progress updates
+   - Blockers and questions
+   - Professional formatting
+
+---
+
+### Use Cases
+
+**Scenario 1: Daily Standup Prep**
+```
+Engineer opens VS Code → "Fetch My Jira Tickets"
+→ Sees 5 tickets (2 in progress, 3 to do)
+→ Selects ticket → "Add Comment" → AI generates:
+   "Completed API integration for user authentication.
+    Current blockers: Need database schema approval.
+    ETA: Ready for testing by EOD."
+→ Posts to Jira → Standup ready!
+```
+
+**Scenario 2: Code Review Context**
+```
+Reviewing code → Not sure which ticket it relates to
+→ "Fetch Tickets" → Filter by "In Review"
+→ Quick view of acceptance criteria
+→ Validate code meets requirements
+```
+
+**Scenario 3: Work Log Updates**
+```
+End of day → Multiple commits made
+→ Select ticket → "Add Comment with Work Summary"
+→ AI analyzes git commits from today
+→ Generates professional work log:
+   "Today's Progress:
+    ✅ Implemented user service endpoints (3 files)
+    ✅ Added unit tests with 85% coverage
+    ✅ Fixed authentication bug (JIRA-123)
+    🔄 In Progress: API documentation
+    📅 Next: Integration testing"
+```
+
+---
+
+### Command Details
+
+#### 1. Fetch My Jira Tickets
+
+**Command:** `devex.fetchMyJiraTickets`
+
+**UI Flow:**
+```
+1. Click "Fetch My Jira Tickets" (or Ctrl+Shift+J)
+2. Extension fetches tickets assigned to you
+3. QuickPick shows:
+   
+   🔵 PROJ-123 [In Progress] - Implement user authentication
+   🔵 PROJ-124 [In Progress] - Add logging to API
+   ⚪ PROJ-125 [To Do] - Write API documentation
+   ⚪ PROJ-126 [To Do] - Fix database migration
+   ✅ PROJ-122 [Done] - Setup CI/CD pipeline
+   
+4. Select ticket → Show details
+5. Actions: View Details | Add Comment | Open in Browser
+```
+
+**Features:**
+- **Filters**: All, To Do, In Progress, In Review, Done
+- **Sort**: By priority, updated date, created date
+- **Search**: Filter by keyword
+- **Refresh**: Manual or auto-refresh (configurable interval)
+- **Offline Mode**: Cache last 50 tickets locally
+
+**Settings:**
+```json
+{
+  "devex.jira.autoRefresh": true,
+  "devex.jira.refreshInterval": 15, // minutes
+  "devex.jira.maxTicketsToFetch": 50,
+  "devex.jira.defaultFilter": "assignee = currentUser() AND status != Done",
+  "devex.jira.cacheEnabled": true
+}
+```
+
+---
+
+#### 2. View Jira Ticket Details
+
+**Command:** `devex.viewJiraTicketDetails`
+
+**UI: Webview Panel**
+```
+┌─────────────────────────────────────────────┐
+│  PROJ-123: Implement User Authentication   │
+├─────────────────────────────────────────────┤
+│  Status: In Progress  |  Priority: High     │
+│  Assignee: John Doe   |  Reporter: Jane     │
+│  Sprint: Sprint 12    |  Story Points: 5    │
+├─────────────────────────────────────────────┤
+│  📋 Description:                            │
+│  Implement OAuth 2.0 authentication...      │
+│                                             │
+│  ✅ Acceptance Criteria:                   │
+│  1. User can login with email              │
+│  2. JWT tokens expire after 1 hour         │
+│  3. Refresh token mechanism                │
+│                                             │
+│  💬 Comments (3):                          │
+│  - @jane: Please use Azure AD              │
+│  - @john: Working on it, ETA tomorrow      │
+│                                             │
+│  [Add Comment] [Open in Browser] [Close]   │
+└─────────────────────────────────────────────┘
+```
+
+**Features:**
+- Rich formatting (markdown support)
+- Embedded images/attachments preview
+- Comment thread view
+- Quick actions at bottom
+- Copy ticket URL
+- Linked issues navigation
+
+---
+
+#### 3. Add AI-Powered Comment
+
+**Command:** `devex.addJiraComment`
+
+**Comment Types:**
+
+**A. Progress Update (from Git Commits)**
+```typescript
+AI analyzes:
+- Git commits since last comment
+- Files changed
+- Commit messages
+
+Generates:
+"📊 Progress Update (Jan 25, 2026)
+
+Completed:
+✅ Implemented OAuth login endpoint (src/auth/oauth.ts)
+✅ Added JWT token generation (src/auth/jwt.ts)
+✅ Created user service with password hashing
+
+In Progress:
+🔄 Writing integration tests
+🔄 API documentation
+
+Next Steps:
+📅 Complete testing by EOD
+📅 Deploy to staging tomorrow
+
+Commits: 7 | Files Changed: 12 | Lines Added: 450"
+```
+
+**B. Code Review Summary**
+```typescript
+AI analyzes:
+- Current code state
+- Test coverage
+- Code quality metrics
+
+Generates:
+"🔍 Code Review Complete
+
+Quality Metrics:
+✅ Code Coverage: 87%
+✅ No critical issues
+⚠️ 2 medium severity warnings (addressed)
+
+Files Reviewed:
+- src/auth/*.ts (5 files)
+- tests/auth/*.test.ts (3 files)
+
+Ready for: QA Testing
+Deployed to: Dev environment"
+```
+
+**C. Blocker Report**
+```typescript
+AI helps format blockers professionally:
+
+User selects: "I'm blocked"
+AI prompts: "What's blocking you?"
+User: "database schema not approved"
+
+AI generates:
+"🚨 Blocker Identified
+
+Issue: Database schema approval pending
+Impact: Cannot proceed with data layer implementation
+Blocking Since: Jan 25, 2026
+Waiting On: @database-team
+
+Required:
+- Approval for user_auth table schema
+- Confirmation on encryption approach
+
+ETA After Unblock: 2 days
+Alternative Approach: Can proceed with mock data for testing"
+```
+
+**D. Technical Question**
+```typescript
+AI formats technical questions:
+
+"❓ Technical Question
+
+Context: Implementing refresh token mechanism
+
+Question: Should we store refresh tokens in Redis or SQL database?
+
+Considerations:
+- Redis: Faster access, auto-expiry
+- SQL: Better audit trail, ACID compliance
+
+Current Approach: Planning to use Redis with 7-day TTL
+
+Please advise on best practice for production."
+```
+
+**E. Demo/Screenshot Share**
+```typescript
+"📸 Feature Demo
+
+Implemented feature is ready for review.
+
+What's New:
+✅ User login page with OAuth flow
+✅ Token refresh mechanism
+✅ Logout functionality
+
+Demo Environment: https://dev.example.com/login
+Test Credentials: Shared in Slack #dev-team
+
+Screenshots attached.
+
+Next: Awaiting feedback for final tweaks."
+```
+
+---
+
+### UI/UX Flow
+
+**Flow 1: Quick Comment**
+```
+1. Cmd+Shift+J → Fetch tickets
+2. Select ticket from list
+3. Click "Add Comment"
+4. Choose comment type:
+   [ ] Progress Update (from Git)
+   [ ] Code Review Summary
+   [ ] Blocker Report
+   [ ] Technical Question
+   [ ] Custom
+5. AI generates comment
+6. Review/Edit in editor
+7. Click "Post to Jira"
+8. ✅ Comment posted!
+```
+
+**Flow 2: From Active Work**
+```
+User working on feature...
+1. Status bar shows: "PROJ-123 | In Progress"
+2. Click status bar item
+3. Quick actions:
+   - Add Progress Update
+   - Mark as Done
+   - Log Time
+   - View Details
+```
+
+**Flow 3: Automatic Updates**
+```
+Settings: "Auto-comment on commit"
+1. Engineer commits code
+2. Extension detects commit
+3. Notification: "Add commit to PROJ-123?"
+4. Click Yes
+5. AI generates comment from commit message
+6. Auto-posts to Jira
+```
+
+---
+
+### Technical Implementation
+
+**Architecture:**
+```typescript
+// src/services/jiraTicketService.ts
+export class JiraTicketService {
+  async fetchMyTickets(filter?: string): Promise<JiraIssue[]>
+  async getTicketDetails(issueKey: string): Promise<JiraIssueDetails>
+  async addComment(issueKey: string, comment: string): Promise<void>
+  async updateStatus(issueKey: string, status: string): Promise<void>
+  async logWork(issueKey: string, timeSpent: string): Promise<void>
+}
+
+// src/services/commentGenerator.ts
+export class CommentGenerator {
+  async generateProgressUpdate(issueKey: string): Promise<string>
+  async generateCodeReviewSummary(files: string[]): Promise<string>
+  async generateBlockerReport(blocker: string): Promise<string>
+  async generateWorkLog(commits: GitCommit[]): Promise<string>
+}
+
+// src/views/jiraTicketsView.ts
+export class JiraTicketsTreeView implements vscode.TreeDataProvider {
+  // Tree view in sidebar showing tickets
+}
+
+// src/views/jiraDetailView.ts
+export class JiraDetailWebview {
+  // Webview panel for ticket details
+}
+```
+
+**VS Code Integration:**
+```json
+// package.json contributions
+{
+  "commands": [
+    {
+      "command": "devex.fetchMyJiraTickets",
+      "title": "Fetch My Jira Tickets",
+      "category": "DevEx",
+      "icon": "$(issues)"
+    },
+    {
+      "command": "devex.addJiraComment",
+      "title": "Add AI Comment to Jira Ticket",
+      "category": "DevEx",
+      "icon": "$(comment)"
+    }
+  ],
+  "viewsContainers": {
+    "activitybar": [{
+      "id": "devex-jira",
+      "title": "DevEx Jira",
+      "icon": "resources/jira-icon.svg"
+    }]
+  },
+  "views": {
+    "devex-jira": [{
+      "id": "devex.jiraTickets",
+      "name": "My Tickets"
+    }]
+  }
+}
+```
+
+---
+
+### Benefits
+
+**For Engineers:**
+- ✅ Stay in VS Code (no context switching)
+- ✅ Quick ticket visibility
+- ✅ Professional comments without effort
+- ✅ Automatic work logging
+- ✅ Faster standup prep
+
+**For Managers:**
+- ✅ More frequent ticket updates
+- ✅ Better visibility into progress
+- ✅ Technical details in comments
+- ✅ Reduced status update meetings
+
+**For Team:**
+- ✅ Consistent comment format
+- ✅ Better documentation
+- ✅ Clear blocker identification
+- ✅ Improved collaboration
+
+**Productivity Metrics:**
+- ⏱️ Save 10-15 min/day on Jira updates
+- ⏱️ Save 15 min on standup prep
+- ⏱️ Reduce context switching (5 min × 3/day = 15 min)
+- **Total: 30-40 min/day saved per engineer**
+- **Per team (10 engineers): 5-6 hours/day = 25-30 hours/week**
+
+---
+
+### Implementation Phases
+
+**Phase 1: Fetch & View (Week 1-2)**
+- Implement fetchMyTickets API
+- Create tree view for tickets
+- Basic ticket details view
+- Cache mechanism
+
+**Phase 2: Comment Generation (Week 3-4)**
+- AI comment generator
+- Git integration for progress updates
+- Comment type templates
+- Post to Jira API
+
+**Phase 3: Status Bar & Quick Actions (Week 5)**
+- Active ticket in status bar
+- Quick action menu
+- Keyboard shortcuts
+- Auto-refresh
+
+**Phase 4: Advanced Features (Week 6+)**
+- Auto-comment on commit
+- Work log tracking
+- Time estimation
+- Bulk operations
+
+---
+
+### Settings & Configuration
+
+```json
+{
+  "devex.jira.baseUrl": "https://company.atlassian.net",
+  "devex.jira.email": "user@company.com",
+  "devex.jira.apiToken": "***",
+  
+  "devex.jira.autoRefresh": true,
+  "devex.jira.refreshInterval": 15,
+  "devex.jira.showInStatusBar": true,
+  "devex.jira.defaultFilter": "assignee = currentUser() AND status != Done",
+  
+  "devex.jira.aiComments.enabled": true,
+  "devex.jira.aiComments.includeGitCommits": true,
+  "devex.jira.aiComments.autoPostOnCommit": false,
+  "devex.jira.aiComments.requireApproval": true
+}
+```
 
 ---
 
