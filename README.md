@@ -23,6 +23,13 @@ The DevEx AI Assistant is a comprehensive VS Code extension that leverages GitHu
   - **DOCX output** with professional formatting, diagrams, and track changes
   - **Software engineering best practices** built-in (SOLID, security, testing, monitoring)
   - Saves 8-12 hours on initial LLD creation
+- **Generate KDD (Key Design Document)** 🆕 AI-powered architectural decision documentation
+  - **Conversational workflow**: Gather context, generate options, evaluate, and document
+  - **AI-generated design options**: 3 distinct approaches with pros/cons analysis
+  - **Decision matrix**: Score options on performance, scalability, cost, complexity, time-to-market
+  - **AI recommendations**: Get expert guidance on which option to choose
+  - **Professional output**: GWAM-compliant KDD template with complete documentation
+  - Saves 6-10 hours on design decision documentation
 - **LLD Review & Validation**: AI-powered architectural review with **two specialized reviews**:
   - **Software Engineering Completeness**: Comprehensive review (error handling, state management, security, performance, monitoring, operations)
   - **API Design Completeness**: Ensure LLDs have all details for OpenAPI/code generation
@@ -63,6 +70,7 @@ Access all commands via Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) or cont
 - **Summarize LLD** - AI-powered analysis and summary of design documents
 - **Review LLD** - Comprehensive architectural review (includes API completeness check)
 - **Generate OpenAPI Spec from LLD** - Create complete OpenAPI 3.0 specifications
+- **Generate Key Design Document (KDD)** 🆕 - AI-driven architectural decision documentation
 
 ####  Development & Code Generation
 - **Generate Spring Boot Project** - Complete enterprise-grade microservices

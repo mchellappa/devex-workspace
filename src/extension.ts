@@ -13,6 +13,12 @@ import { generateLLDFromRequirementsCommand } from './commands/generateLLDFromRe
 import { fetchMyJiraTicketsCommand } from './commands/fetchMyJiraTickets';
 import { analyzeJiraTicketCommand } from './commands/analyzeJiraTicket';
 import { addJiraCommentCommand } from './commands/addJiraComment';
+import { generateKDD } from './commands/generateKDD';
+import { generateLLDFromKDD } from './commands/generateLLDFromKDD';
+import { createJiraStoryFromLLD } from './commands/createJiraStoryFromLLD';
+import { implementJiraStory } from './commands/implementJiraStory';
+import { completeJiraStory } from './commands/completeJiraStory';
+import { convertMarkdownCommand } from './commands/convertMarkdown';
 import { TelemetryService } from './services/telemetryService';
 import { checkForUpdatesCommand } from './commands/checkForUpdates';
 import { registerChatParticipant } from './chatParticipant';
@@ -119,6 +125,42 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('devex.addJiraComment', (issueKey?: string) => 
             addJiraCommentCommand(context, telemetryService, issueKey)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateKDD', () => 
+            generateKDD(context)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateLLDFromKDD', (fileUri?: vscode.Uri) => 
+            generateLLDFromKDD(context, telemetryService, fileUri)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.createJiraStoryFromLLD', (fileUri?: vscode.Uri) => 
+            createJiraStoryFromLLD(context, telemetryService, fileUri)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.implementJiraStory', (issueKey?: string) => 
+            implementJiraStory(context, telemetryService, issueKey)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.completeJiraStory', (issueKey?: string) => 
+            completeJiraStory(context, telemetryService, issueKey)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.convertMarkdown', (fileUri?: vscode.Uri) => 
+            convertMarkdownCommand(context, telemetryService, fileUri)
         )
     );
 

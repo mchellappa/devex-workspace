@@ -2,7 +2,7 @@
   "name": "devex-ai-assistant",
   "displayName": "DevEx AI Assistant",
   "description": "Complete SDLC acceleration platform: LLD review, OpenAPI generation, Spring Boot code generation, deployment automation, and productivity analytics. AI-powered by GitHub Copilot.",
-  "version": "1.3.23",
+  "version": "1.3.31",
   "publisher": "CodeSamurai",
   "icon": "images/icon.png",
   "private": true,
@@ -141,10 +141,51 @@
         "title": "Add Selected Text as Jira Comment",
         "category": "DevEx",
         "icon": "$(comment)"
+      },
+      {
+        "command": "devex.generateKDD",
+        "title": "Generate Key Design Document (KDD)",
+        "category": "DevEx",
+        "icon": "$(file-text)"
+      },
+      {
+        "command": "devex.generateLLDFromKDD",
+        "title": "Generate LLD from KDD",
+        "category": "DevEx",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "devex.createJiraStoryFromLLD",
+        "title": "Create Jira Story from LLD",
+        "category": "DevEx",
+        "icon": "$(issues)"
+      },
+      {
+        "command": "devex.implementJiraStory",
+        "title": "Implement Jira Story/Task",
+        "category": "DevEx",
+        "icon": "$(code)"
+      },
+      {
+        "command": "devex.completeJiraStory",
+        "title": "Complete Jira Story",
+        "category": "DevEx",
+        "icon": "$(check)"
+      },
+      {
+        "command": "devex.convertMarkdown",
+        "title": "Convert Markdown to DOCX/PDF",
+        "category": "DevEx",
+        "icon": "$(file-pdf)"
       }
     ],
     "menus": {
       "editor/context": [
+        {
+          "when": "resourceExtname == .md",
+          "command": "devex.convertMarkdown",
+          "group": "1_modification@1"
+        },
         {
           "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
           "command": "devex.summarizeLLD",
@@ -171,9 +212,19 @@
           "group": "devex@5"
         },
         {
+          "when": "resourceExtname == .md",
+          "command": "devex.generateLLDFromKDD",
+          "group": "devex@6"
+        },
+        {
+          "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
+          "command": "devex.createJiraStoryFromLLD",
+          "group": "devex@7"
+        },
+        {
           "when": "resourceExtname == .yaml || resourceExtname == .yml || resourceExtname == .json",
           "command": "devex.parseOpenAPI",
-          "group": "devex@6"
+          "group": "devex@8"
         }
       ],
       "explorer/context": [
@@ -213,9 +264,19 @@
           "group": "devex@6"
         },
         {
+          "when": "resourceExtname == .md",
+          "command": "devex.generateLLDFromKDD",
+          "group": "devex@7"
+        },
+        {
+          "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
+          "command": "devex.createJiraStoryFromLLD",
+          "group": "devex@8"
+        },
+        {
           "when": "resourceExtname == .yaml || resourceExtname == .yml || resourceExtname == .json",
           "command": "devex.parseOpenAPI",
-          "group": "devex@7"
+          "group": "devex@9"
         }
       ]
     },
@@ -416,6 +477,7 @@
   },
   "dependencies": {
     "docx": "^8.5.0",
+    "form-data": "^4.0.5",
     "handlebars": "^4.7.8",
     "js-yaml": "^4.1.0",
     "mammoth": "^1.11.0",

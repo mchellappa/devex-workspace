@@ -5,6 +5,241 @@ All notable changes to the DevEx AI Assistant extension will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.31] - 2026-02-02
+
+### Added
+- **Complete Jira Story** ✅
+  - New command: "Complete Jira Story" - Finalize story with Git commit, push, PR, and Jira update
+  - **Git Integration:**
+    - Checks for uncommitted changes
+    - Stages all changes automatically
+    - Creates commit with customizable message (defaults to "ISSUEKEY: Summary")
+    - Pushes to remote repository
+    - Captures commit hash for Jira comment
+  - **Interactive Completion Options:**
+    - **Run Tests**: Execute tests before committing (Maven/npm/pytest)
+    - **Create Pull Request**: Automatically create GitHub PR using GitHub CLI
+    - **Transition to Done**: Mark story as complete in Jira
+    - All options can be toggled on/off
+  - **Test Execution:**
+    - Auto-detects project type (Maven, Node.js, Python)
+    - Runs appropriate test command (mvn test, npm test, pytest)
+    - Shows test results in terminal
+    - Allows continuing even if tests fail (with confirmation)
+  - **Pull Request Creation:**
+    - Uses GitHub CLI (`gh pr create`)
+    - PR title: "ISSUEKEY: Story Summary"
+    - PR body includes commit message and Jira reference
+    - Returns PR URL for Jira comment
+  - **Jira Updates:**
+    - Posts completion comment with:
+      - Commit hash and branch name
+      - Pull Request URL (if created)
+      - Test results summary
+      - List of changed files (up to 20)
+    - Transitions issue to "Done" status (optional)
+    - Opens story in browser or PR in GitHub
+  - **Smart Error Handling:**
+    - Warns if no changes to commit
+    - Allows continuing with completion anyway
+    - Graceful handling of push failures
+    - Graceful handling of PR creation failures
+    - Graceful handling of transition failures
+  - Completes the full SDLC loop: Design → Plan → Implement → **Complete** ✅
+
+## [1.3.30] - 2026-02-02
+
+### Added
+- **Implement Jira Story/Task** 🚀
+  - New command: "Implement Jira Story/Task" - AI-powered code generation from Jira stories and tasks
+  - **Interactive Implementation Workflow:**
+    - Prompt for Jira story/task key or select from assigned tasks
+    - Automatically detects if implementing full story or single subtask
+    - For full stories: Shows checklist of subtasks, lets engineer select which to implement
+    - **Auto-detects project structure:**
+      - Spring Boot (Maven/Gradle) - detects base package from existing code
+      - Node.js/TypeScript - detects from package.json
+      - Python - detects from requirements.txt
+      - .NET - detects from .csproj files
+    - Analyzes task descriptions and generates implementation plan
+    - **Preview dialog** showing all files to be generated with paths
+    - Confirm or cancel before code generation
+  - **AI Code Generation:**
+    - Uses LLD context from Jira story for accurate implementation
+    - Generates production-ready code following best practices
+    - **Spring Boot**: Controllers (@RestController), Services (@Service), Repositories (@Repository), Entities (@Entity), DTOs, Config, Tests
+    - **Node.js**: Route handlers, Services, Models, DTOs/Interfaces, Middleware, Tests
+    - **Python**: API routes (FastAPI/Flask), Services, Models, Schemas, Tests
+    - Includes comprehensive documentation (JavaDoc/JSDoc/docstrings)
+    - Adds error handling and validation
+    - Includes TODO comments for custom business logic
+    - Follows SOLID principles and language conventions
+  - **Post-Implementation Actions:**
+    - Creates all files in proper project structure
+    - Updates Jira with comment listing generated files
+    - Transitions issue to "In Progress" status
+    - Opens first generated file in editor
+    - Shows summary of generated files
+  - Supports both single subtask and full story implementation
+  - Completes the full SDLC loop: Design → Plan → **Implement** → Test
+
+## [1.3.29] - 2026-02-02
+
+### Added
+- **Create Jira Story from LLD** 🎫
+  - New command: "Create Jira Story from LLD" - Automatically creates Jira story with AI-generated details
+  - **Interactive Story Creation Workflow:**
+    - Project Key selection (from settings or prompt)
+    - Priority selection (High, Medium, Low, Blocker, Critical)
+    - Optional assignee email
+    - Optional Epic link
+    - Optional labels (comma-separated)
+    - **Preview dialog** showing story summary, description, acceptance criteria before creation
+  - AI analyzes LLD document and generates:
+    - **Story Summary**: Concise 50-100 character title capturing the main feature
+    - **Description**: 2-3 paragraph explanation of what to build, why, and expected outcome
+    - **Acceptance Criteria**: 5-8 specific, testable criteria in Given-When-Then format
+    - **Implementation Notes**: Key technical considerations, dependencies, constraints from LLD
+    - **Story Points**: Complexity estimate (1, 2, 3, 5, 8, 13)
+    - **Subtasks**: 5-8 detailed subtasks (API endpoints, database schema, service layer, unit tests, integration tests, security, monitoring, documentation)
+  - Automatically creates parent story with all metadata (priority, assignee, epic, labels)
+  - Creates all subtasks linked to parent story
+  - Attaches LLD document to story (if under 10MB)
+  - Posts acceptance criteria and implementation notes as comment
+  - Opens story in browser or copies link to clipboard
+  - Supports .md, .txt, and .docx LLD files
+  - Completes the design-to-backlog workflow loop
+
+## [1.3.28] - 2026-02-02
+
+### Added
+- **Generate LLD from KDD** 🎯
+  - New command: "Generate LLD from KDD" - Converts approved Key Design Document into comprehensive Low-Level Design
+  - AI-powered generation of complete technical specifications:
+    - **System Architecture**: High-level component breakdown and communication patterns
+    - **API Specifications**: REST endpoints with full request/response schemas, authentication, authorization
+    - **Database Schema**: Tables, columns, indexes, foreign keys, and migration strategy
+    - **Service Components**: Microservices breakdown with responsibilities and tech stack
+    - **Sequence Flows**: Text descriptions of authentication, business logic, and error handling flows
+    - **Error Handling**: Error types, HTTP status codes, logging, and retry mechanisms
+    - **Security Implementation**: Authentication, authorization, encryption, input validation
+    - **Performance Considerations**: Caching, database optimization, rate limiting
+    - **Monitoring & Observability**: Logging strategy, metrics, alerting rules
+    - **Deployment Architecture**: Container config, Kubernetes setup, CI/CD pipeline
+  - Leverages enrichment data from KDD (implementation details, tech stack, security, testing)
+  - Outputs professional DOCX document with structured sections
+  - Smart KDD parsing: extracts problem statement, selected option, justification, and enrichment
+  - Completes the design-to-implementation workflow loop for demo
+
+## [1.3.27] - 2026-02-02
+
+### Enhanced
+- **KDD Generator - Automatic Enrichment** 🚀
+  - AI automatically enriches selected design option with detailed implementation guidance
+  - Added comprehensive sections to KDD output:
+    - **Implementation Details**: Step-by-step implementation breakdown
+    - **Technology Stack**: Recommended technologies, frameworks, and tools
+    - **Resource Requirements**: Team composition and required skills
+    - **Timeline Breakdown**: Detailed sprint/phase planning
+    - **Security Considerations**: Specific security measures and best practices
+    - **Testing Strategy**: Comprehensive testing approach (unit, integration, performance, security)
+    - **Success Metrics**: Measurable KPIs to validate success
+    - **Dependencies**: External dependencies and integration points
+    - **Risk Mitigation**: Detailed mitigation strategies
+  - Enrichment happens automatically after option selection (no separate command needed)
+  - Saves an additional 4-6 hours of implementation planning
+  - Professional, ready-to-share documentation with all stakeholder needs addressed
+## [1.3.27] - 2026-01-30
+
+### Added
+- **Markdown to DOCX/PDF Converter** 📄 - Convert markdown files to professional documents
+  - Right-click on any .md file → "Convert Markdown to DOCX/PDF"
+  - Command: `DevEx: Convert Markdown to DOCX/PDF`
+  - **DOCX Output**: Full markdown parsing with formatting preservation
+    - Headings (H1-H6) with proper styles
+    - Bold, italic, inline code formatting
+    - Code blocks with syntax highlighting
+    - Tables, lists (ordered/unordered)
+    - Blockquotes with left border styling
+    - Horizontal rules
+  - **PDF Output**: HTML preview with print-to-PDF instructions
+  - Smart parsing of complex markdown syntax
+  - Professional styling matching GitHub markdown
+  - Preserves document structure and formatting
+  - Perfect for converting KDDs, LLDs, and technical docs to shareable formats
+
+## [1.3.25] - 2026-01-30
+
+### Added
+- **KDD (Key Design Document) Generator** 📋 - AI-powered architectural decision documentation
+  - New command: `DevEx: Generate Key Design Document (KDD)`
+  - Chat integration: `@askcodesamurai generate kdd for [problem statement]`
+  - **Multi-step conversational workflow**:
+    1. 🎯 **Context Gathering**: Interactive form for requirements, constraints, assumptions
+    2. 🤖 **AI Option Generation**: Generates 3 distinct design options with pros/cons
+    3. ✏️ **Refinement**: Edit or regenerate options with custom feedback
+    4. 📊 **Evaluation**: Score options on 5 criteria (performance, scalability, cost, complexity, time-to-market)
+    5. 🎯 **AI Recommendation**: Get AI-powered option selection with justification
+    6. 📄 **Document Generation**: Creates comprehensive KDD using GWAM template
+  
+  - **Features**:
+    - AI-driven design option generation using GitHub Copilot
+    - Interactive webviews for context gathering and evaluation
+    - Decision matrix with weighted scoring
+    - Option regeneration with user feedback
+    - Pros/cons analysis for each design option
+    - Effort estimation (Small/Medium/Large/XLarge)
+    - Risk identification and mitigation strategies
+    - Automated document generation in Markdown format
+  
+  - **GWAM KDD Template**:
+    - Problem Statement with business context
+    - Design criteria (functional + non-functional requirements)
+    - 3 design options with detailed descriptions
+    - Decision matrix with weighted criteria
+    - Recommended approach with justification
+    - Implementation plan and timeline
+    - Risk assessment and mitigation
+    - Professional document structure ready for stakeholder review
+
+### Enhanced
+- **@askcodesamurai Chat Participant**:
+  - Added KDD generation support
+  - Command: `@askcodesamurai generate kdd for [problem]`
+  - Shows problem statement extraction
+  - Provides KDD generator launch button
+  - Guidance for minimum problem statement requirements
+
+## [1.3.24] - 2026-01-28
+
+### Added
+- **Intelligent Workflow Orchestration** 🤖 - AI-powered project automation
+  - New command: `@askcodesamurai work on SWIFT-70243`
+  - AI analyzes Jira ticket and workspace context
+  - Automatically detects existing project structure:
+    - Spring Boot projects (pom.xml/build.gradle)
+    - OpenAPI specifications (openapi.yaml)
+    - Deployment configs (Dockerfile, K8s, CI/CD)
+  - Suggests context-aware actions:
+    - **New project**: Generate Spring Boot/OpenAPI/LLD from scratch
+    - **Existing project**: Add endpoints, update specs, review code
+  - Smart decision matrix: Different suggestions for new vs enhancement stories
+  - One-click action buttons to launch relevant tools with Jira context
+  
+### Enhanced
+- **Workspace Analysis**:
+  - Scans workspace before suggesting actions
+  - Detects pom.xml, build.gradle for Java projects
+  - Finds OpenAPI/Swagger specs
+  - Identifies Docker, Kubernetes, GitHub Actions configs
+  - Shows workspace status in chat response
+  
+- **@askcodesamurai Chat Participant**:
+  - Enhanced AI prompts with workspace context
+  - Smarter action mapping based on project state
+  - 8 distinct actions (was 5): Generate vs Add/Update variants
+  - Better handling of enhancement stories vs new features
+
 ## [1.3.23] - 2026-01-28
 
 ### Added

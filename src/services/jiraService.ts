@@ -23,10 +23,21 @@ export interface JiraConfig {
 export class JiraService {
     private config: JiraConfig | null = null;
 
+    constructor(baseUrl?: string, email?: string, apiToken?: string) {
+        if (baseUrl && email && apiToken) {
+            this.config = { baseUrl, email, apiToken };
+        }
+    }
+
     /**
      * Initialize Jira configuration from VSCode settings or prompt user
      */
     async initialize(): Promise<boolean> {
+        // If already configured via constructor, return true
+        if (this.config) {
+            return true;
+        }
+
         const config = vscode.workspace.getConfiguration('devex.jira');
         const baseUrl = config.get<string>('baseUrl');
         const email = config.get<string>('email');
@@ -617,5 +628,322 @@ export class JiraService {
                 return undefined;
             }
         });
+    }
+
+    /**
+     * Create a new Jira issue
+     */
+    async createIssue(issueData: any): Promise<any> {
+        if (!this.config) {
+            const initialized = await this.initialize();
+            if (!initialized) {
+                throw new Error('Jira configuration is required');
+            }
+        }
+
+        try {
+            logger.info(`Creating Jira issue in project: ${issueData.fields.project.key}`);
+
+            const url = `${this.config!.baseUrl}/rest/api/3/issue`;
+            const auth = Buffer.from(`${this.config!.email}:${this.config!.apiToken}`).toString('base64');
+
+            // Convert description to ADF format if it's a string
+            if (issueData.fields.description && typeof issueData.fields.description === 'string') {
+                issueData.fields.description = {
+                    type: 'doc',
+                    version: 1,
+                    content: [
+                        {
+                            type: 'paragraph',
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: issueData.fields.description
+                                }
+                            ]
+                        }
+                    ]
+                };
+            }
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(issueData)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                logger.error(`Create issue failed: ${response.status} ${response.statusText}\nResponse: ${errorText}`);
+                throw new Error(`Failed to create issue: ${response.status} ${response.statusText}`);
+            }
+
+            const createdIssue: any = await response.json();
+            logger.info(`Successfully created issue: ${createdIssue.key}`);
+
+            return createdIssue;
+
+        } catch (error: any) {
+            logger.error(`Failed to create Jira issue: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Create a subtask for a Jira issue
+     */
+    async createSubtask(parentKey: string, summary: string, description: string): Promise<any> {
+        if (!this.config) {
+            const initialized = await this.initialize();
+            if (!initialized) {
+                throw new Error('Jira configuration is required');
+            }
+        }
+
+        try {
+            logger.info(`Creating subtask for ${parentKey}: ${summary}`);
+
+            // First, get the parent issue to extract project key
+            const parentIssue = await this.fetchIssue(parentKey);
+            
+            if (!parentIssue) {
+                throw new Error(`Parent issue ${parentKey} not found`);
+            }
+            
+            const url = `${this.config!.baseUrl}/rest/api/3/issue`;
+            const auth = Buffer.from(`${this.config!.email}:${this.config!.apiToken}`).toString('base64');
+
+            const subtaskData = {
+                fields: {
+                    project: {
+                        key: parentIssue.key.split('-')[0]
+                    },
+                    parent: {
+                        key: parentKey
+                    },
+                    summary: summary,
+                    description: {
+                        type: 'doc',
+                        version: 1,
+                        content: [
+                            {
+                                type: 'paragraph',
+                                content: [
+                                    {
+                                        type: 'text',
+                                        text: description
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    issuetype: {
+                        name: 'Subtask'
+                    }
+                }
+            };
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(subtaskData)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                logger.error(`Create subtask failed: ${response.status} ${response.statusText}\nResponse: ${errorText}`);
+                throw new Error(`Failed to create subtask: ${response.status} ${response.statusText}`);
+            }
+
+            const createdSubtask: any = await response.json();
+            logger.info(`Successfully created subtask: ${createdSubtask.key}`);
+
+            return createdSubtask;
+
+        } catch (error: any) {
+            logger.error(`Failed to create subtask: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Add an attachment to a Jira issue
+     */
+    async addAttachment(issueKey: string, filePath: string): Promise<void> {
+        if (!this.config) {
+            const initialized = await this.initialize();
+            if (!initialized) {
+                throw new Error('Jira configuration is required');
+            }
+        }
+
+        try {
+            logger.info(`Adding attachment to ${issueKey}: ${filePath}`);
+
+            const fs = require('fs');
+            const path = require('path');
+            const FormData = require('form-data');
+
+            const url = `${this.config!.baseUrl}/rest/api/3/issue/${issueKey}/attachments`;
+            const auth = Buffer.from(`${this.config!.email}:${this.config!.apiToken}`).toString('base64');
+
+            const form = new FormData();
+            form.append('file', fs.createReadStream(filePath), path.basename(filePath));
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'X-Atlassian-Token': 'no-check',
+                    ...form.getHeaders()
+                },
+                body: form
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                logger.error(`Add attachment failed: ${response.status} ${response.statusText}\nResponse: ${errorText}`);
+                throw new Error(`Failed to add attachment: ${response.status} ${response.statusText}`);
+            }
+
+            logger.info(`Successfully added attachment to ${issueKey}`);
+
+        } catch (error: any) {
+            logger.error(`Failed to add attachment: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Fetch all subtasks for a parent issue
+     */
+    async fetchSubtasks(parentKey: string): Promise<JiraIssue[]> {
+        if (!this.config) {
+            const initialized = await this.initialize();
+            if (!initialized) {
+                throw new Error('Jira configuration is required');
+            }
+        }
+
+        try {
+            logger.info(`Fetching subtasks for ${parentKey}`);
+
+            const jql = `parent = ${parentKey}`;
+            const url = `${this.config!.baseUrl}/rest/api/3/search?jql=${encodeURIComponent(jql)}`;
+            const auth = Buffer.from(`${this.config!.email}:${this.config!.apiToken}`).toString('base64');
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                logger.error(`Fetch subtasks failed: ${response.status} ${response.statusText}\nResponse: ${errorText}`);
+                throw new Error(`Failed to fetch subtasks: ${response.status} ${response.statusText}`);
+            }
+
+            const data: any = await response.json();
+            const subtasks: JiraIssue[] = data.issues.map((issue: any) => ({
+                key: issue.key,
+                summary: issue.fields.summary,
+                description: this.extractTextFromADF(issue.fields.description),
+                issueType: issue.fields.issuetype.name,
+                status: issue.fields.status.name,
+                priority: issue.fields.priority?.name || 'Medium',
+                assignee: issue.fields.assignee?.displayName,
+                reporter: issue.fields.reporter?.displayName
+            }));
+
+            logger.info(`Found ${subtasks.length} subtasks for ${parentKey}`);
+
+            return subtasks;
+
+        } catch (error: any) {
+            logger.error(`Failed to fetch subtasks: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Transition an issue to a new status
+     */
+    async transitionIssue(issueKey: string, toStatus: string): Promise<void> {
+        if (!this.config) {
+            const initialized = await this.initialize();
+            if (!initialized) {
+                throw new Error('Jira configuration is required');
+            }
+        }
+
+        try {
+            logger.info(`Transitioning ${issueKey} to ${toStatus}`);
+
+            // First, get available transitions
+            const transitionsUrl = `${this.config!.baseUrl}/rest/api/3/issue/${issueKey}/transitions`;
+            const auth = Buffer.from(`${this.config!.email}:${this.config!.apiToken}`).toString('base64');
+
+            const transitionsResponse = await fetch(transitionsUrl, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!transitionsResponse.ok) {
+                throw new Error(`Failed to get transitions: ${transitionsResponse.status}`);
+            }
+
+            const transitionsData: any = await transitionsResponse.json();
+            const transition = transitionsData.transitions.find((t: any) => 
+                t.name.toLowerCase() === toStatus.toLowerCase() ||
+                t.to.name.toLowerCase() === toStatus.toLowerCase()
+            );
+
+            if (!transition) {
+                logger.warn(`Transition to "${toStatus}" not available for ${issueKey}`);
+                return;
+            }
+
+            // Execute the transition
+            const response = await fetch(transitionsUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    transition: {
+                        id: transition.id
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                logger.error(`Transition failed: ${response.status} ${response.statusText}\nResponse: ${errorText}`);
+                throw new Error(`Failed to transition issue: ${response.status} ${response.statusText}`);
+            }
+
+            logger.info(`Successfully transitioned ${issueKey} to ${toStatus}`);
+
+        } catch (error: any) {
+            logger.error(`Failed to transition issue: ${error.message}`);
+            throw error;
+        }
     }
 }
