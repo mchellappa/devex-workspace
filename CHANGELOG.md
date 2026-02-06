@@ -5,6 +5,288 @@ All notable changes to the DevEx AI Assistant extension will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.46] - 2026-02-05
+
+### Fixed
+- **Complete Jira Story - PR Creation Fallback for Non-GH Users**: Added browser-based PR creation
+  - **Problem**: PR creation failed completely if GitHub CLI (`gh`) not installed
+  - **User Feedback**: "gh is not installed in all laptop"
+  - **Solution**: Smart fallback approach:
+    1. **Try `gh` CLI first** (if installed and authenticated)
+    2. **If not available**: Open GitHub PR page in browser with form pre-filled:
+       - Parses git remote URL to get owner/repo
+       - Builds URL: `https://github.com/owner/repo/compare/main...feature-branch?title=...&body=...`
+       - Opens in browser with title and body pre-populated
+       - Prompts user: "After creating PR, paste URL here" (optional)
+    3. **User can**: Click "Create PR" in browser → Paste URL back → Or skip
+  - **Result**: 
+    - ✅ Works with `gh` CLI (automated)
+    - ✅ Works without `gh` CLI (browser fallback)
+    - ✅ Pre-fills PR title: "SWIFT-123: Issue summary"
+    - ✅ Pre-fills PR body: "Resolves SWIFT-123\n\n[commit message]\n\n_Created by DevEx AI Assistant_"
+    - ✅ Optional: User can paste PR URL back for tracking
+    - ✅ No hard dependency on `gh` CLI installation
+
+- **Complete Jira Story - Git Push Fails for New Branches**: Added automatic upstream setup
+  - **Problem**: `git push` failed for feature branches that don't have upstream configured
+  - **Root Cause**: Used simple `repository.push()` which doesn't handle `--set-upstream` automatically
+  - **Error**: "no upstream branch" or "has no upstream branch"
+  - **Solution**:
+    - Try normal push first
+    - If fails with "no upstream" error, detect it
+    - Automatically run: `git push --set-upstream origin <branch-name>`
+    - Show message: "Setting upstream for branch: feature/SWIFT-xxxxx"
+  - **Result**: 
+    - ✅ Works for branches with existing upstream (normal push)
+    - ✅ Works for new feature branches (auto sets upstream)
+    - ✅ Handles long branch names like: `feature/SWIFT-73406-testdevelop-api-layer-for-acb-data-retrieval`
+    - ✅ One command works for all scenarios
+
+- **Complete Jira Story - "Failed to execute git" Error**: Fixed git operation error handling
+  - **Problem**: Command failed with generic "Failed to execute git" error message
+  - **Root Cause**: Multiple issues:
+    - Git repository might not be initialized when command starts
+    - Git operations (add, commit, getCommit) were not wrapped in try-catch
+    - Error messages were not descriptive
+  - **Solution**:
+    - Added 1-second wait for git to initialize if repositories array is empty
+    - Wrapped git.add() with specific error: "Failed to stage changes"
+    - Wrapped commit() with specific error: "Failed to create commit - check git config"
+    - Wrapped getCommit() with fallback to 'unknown' hash if it fails
+    - Enhanced top-level error handler with "View Output" action button
+    - Added detailed error logging with stack traces
+  - **Result**: Better error messages and graceful degradation:
+    - ✅ "No Git repository found... run: git init" if no repo
+    - ✅ "Failed to stage changes... files locked?" if add fails
+    - ✅ "Failed to create commit... check user.name/email" if commit fails
+    - ✅ Continues even if commit hash retrieval fails
+    - ✅ "View Output" button shows detailed logs
+
+- **Implement Jira Story - Conversational Transitions Not Working**: Fixed transition error handling
+  - **Problem**: When Jira transition failed due to required fields, the error was caught and showed generic warning instead of conversational dialog
+  - **Root Cause**: `implementJiraStory` had try-catch that prevented JiraService's built-in conversational error handling from executing
+  - **Solution**: Removed the early catch block so errors bubble up to JiraService's conversational handler
+  - **Result**: When required fields are missing, user now sees:
+    - Modal dialog listing required fields
+    - "Open in Jira" button to fill fields in browser
+    - "Retry Transition" option after filling fields
+    - Recursive retry until success or user cancels
+
+- **Complete Jira Story - Same Transition Issue**: Fixed DONE transition error handling
+  - Applied same fix as above to `completeJiraStory` command
+  - Conversational error handling now works for DONE transitions too
+
+- **Complete Jira Story - PR Creation Not Working**: Fixed Pull Request creation
+  - **Problem**: PR creation used terminal commands without capturing output, always returned placeholder URL
+  - **Root Cause**: Terminal output wasn't captured, just blindly sent commands and returned fake URL
+  - **Solution**: 
+    - Use `child_process.exec()` with promises to capture actual command output
+    - Parse PR URL from `gh pr create` stdout
+    - Fallback to `gh pr view` if URL not in create output
+    - Check for gh CLI installation and authentication
+    - Show helpful errors with action buttons (install gh, authenticate, open terminal)
+  - **Result**: PR creation now works properly:
+    - ✅ Verifies gh CLI is installed
+    - ✅ Verifies user is authenticated
+    - ✅ Creates PR and captures actual URL
+    - ✅ Returns real PR URL for comment and display
+    - ✅ Helpful error messages with action buttons if setup needed
+
+- **Generate Spring Boot Project - Git & Jira Integration**: Added missing git commit and Jira integration
+  - **Problem**: Generate Spring Boot Project command wasn't committing to git or updating Jira
+  - **Root Cause**: Git and Jira integration was only in "Implement Jira Story" command, not in standalone project generator
+  - **Solution**:
+    - Added automatic git commit after project generation (stages all files and commits)
+    - Added optional Jira integration (prompts user to link to story)
+    - Jira features: Add comment with project details, transition to IN PROGRESS
+    - Uses conversational error handling for Jira transitions (same as other commands)
+  - **Result**: All code generation commands now consistently commit to git and optionally update Jira
+
+- **Generate LLD DOCX Formatting**: Fixed broken formatting in Word documents
+  - **Problem**: Tables displayed as ASCII art, markdown sections didn't render properly
+  - **Root Cause**: Direct markdown-to-DOCX conversion was too simplistic, couldn't handle complex structures
+  - **Solution**: Refactored to generate markdown first, then use proper converter that handles:
+    - Tables with proper cell formatting
+    - Code blocks with syntax highlighting
+    - Nested lists and complex structures
+    - Headers and styling
+  - **Technical**: Now uses `convertToDocx()` from convertMarkdown module which has full markdown parsing
+  - **Result**: All LLD documents now display correctly in Microsoft Word with proper table rendering
+
+- **Generate LLD Filename Length**: Fixed "ENAMETOOLONG" error when generating LLDs
+  - **Problem**: Long source filenames caused filesystem error when creating DOCX files
+  - **Root Cause**: Filename wasn't being truncated, and markdown content was passed as path
+  - **Solution**: 
+    - Truncate source filename to 50 characters max
+    - Save markdown to file first (not just content in memory)
+    - Pass actual file path to DOCX converter
+  - **Result**: LLD generation now works with any length source document name
+
+## [1.3.42] - 2026-02-04
+
+### Enhanced
+- **Generate KDD** - Dramatically improved option selection and decision workflow:
+  - **Comparison Table**: Shows metrics for all 3 options side-by-side with visual score bars
+  - **AI Recommendation**: Automatically analyzes all options and recommends best choice with justification
+  - **User Confirmation**: Ask user to confirm or choose different option with clear visual indicators
+  - **Clarifying Questions**: If user disagrees with AI, prompts for concerns and additional assumptions
+  - **Concerns Tracking**: Documents user concerns in final KDD for transparency
+  - **Updated Assumptions**: Allows adding new assumptions based on decision discussions
+  - Weighted scoring (Performance 25%, Scalability 20%, Cost 20%, Complexity 15%, Time-to-Market 20%)
+
+- **Generate LLD** - Streamlined for engineer usability:
+  - **Technology Stack Question**: Now asks "Java or .NET?" upfront to generate relevant code snippets throughout the LLD
+    - Java/Spring Boot: Spring annotations, JPA/Hibernate, Spring Security examples
+    - .NET/C#: ASP.NET Core patterns, Entity Framework Core, ASP.NET Identity examples
+    - Also supports Node.js and Python with appropriate code patterns
+  - **Standard Pattern Sections**: Monitoring, Deployment, Scalability, Testing Strategy, CI/CD now reference company standards instead of generating full content
+  - **Reduced Document Size**: Focuses on project-specific details, avoiding repetitive boilerplate (reduces ~50-100 pages)
+  - **Customization Tracking**: Provides space to document any deviations from standard practices
+  - **Reference Links**: Points to internal wiki for standard pattern details
+
+### Changed
+- **Removed `Generate LLD from KDD` command** - consolidated into `Generate LLD from Requirements`
+  - `Generate LLD from Requirements` now works with KDD markdown files
+  - Produces more comprehensive and consistent LLD output
+  - Uses shared LLDClarificationService for quality consistency
+
+### Fixed
+- **CRITICAL**: Jira transition now handles required fields **conversationally** (works for ANY Jira project)
+  - Detects missing required fields from error response
+  - Shows modal dialog listing which fields are required
+  - Offers "Open in Jira" button to fill fields manually in browser
+  - After user fills fields, offers "Retry Transition" to attempt again
+  - **No hardcoded values** - works with any Jira workflow and custom fields
+  - Graceful fallback: user can skip transition and continue
+- **CRITICAL**: Build tool detection now forces Maven when pom.xml exists
+  - Detects `pom.xml` vs `build.gradle` in workspace before generating plan
+  - AI prompt explicitly instructs: "DO NOT CHANGE THIS - use pom.xml ONLY" when Maven detected
+  - Prevents AI from randomly suggesting Gradle when project uses Maven
+  - Ensures consistency with existing project structure
+- **CRITICAL**: Added automatic git commit after code generation
+  - Stages all generated files using VS Code Git API
+  - Commits with message: `{issueKey}: Generated implementation`
+  - Lists all generated files in commit message
+  - Shows confirmation or warning if commit fails
+  - Completes the feature branch workflow (create branch → generate code → commit)
+
+### Changed
+- Removed Story Points field handling (not required in SWIFT workflow)
+- Team field now defaults to "Code Samurai" if not found in allowed values
+- Implementation plan now includes detected build tool information
+- Git commit happens before Jira update (Step 10) for proper sequencing
+- Step numbers updated: git commit is Step 10, Jira update is Step 11, success message is Step 12
+
+## [1.3.41] - 2026-02-04
+
+### Fixed
+- **CRITICAL**: Replaced AI code generation with Handlebars template-based generation for architecture guardrails
+  - Spring Boot files now generated from `templates/springboot/*.template` files
+  - Ensures consistent project structure following best practices
+  - Controller, Service, Repository, pom.xml all use predefined templates
+  - Maintains architectural consistency across all generated code
+- Enhanced Jira transition field detection to check both fieldKey and field name
+  - Story Points: Checks `customfield_xxxxx.includes('storypoint')` in addition to field name
+  - Quarter Plan: Checks both fieldKey and display name for "quarter" or "plan"
+  - Uses existing field values from current issue when available
+  - Better logging to debug field matching issues
+
+### Changed
+- Imported `Handlebars` and `TemplateProvider` into `implementJiraStory.ts`
+- Added `generateCodeFileFromTemplate()` to use templates instead of AI
+- Added `generateSpringBootFile()` for template-based Spring Boot code generation
+- AI generation (`generateCodeFileWithAI()`) now only used as fallback for unknown file types
+
+## [1.3.40] - 2026-02-04
+
+### Fixed
+- **Jira Subtask Creation (400 Bad Request):**
+  - Fixed subtask creation by using direct issue API instead of search API
+  - Now fetches parent issue's project details to get correct subtask type ID
+  - Handles Jira instances where search API is disabled (410 Gone)
+  - Added fallback to issue type name if ID lookup fails
+
+- **Jira Story Creation - Enhanced Error Handling:**
+  - Story key now shown immediately after creation (before subtask creation)
+  - Subtask failures no longer hide the story key
+  - Each subtask creation wrapped in try-catch for graceful error handling
+  - Shows warning message listing which subtasks failed with option to create manually
+  - Added detailed output channel for complete story and subtask breakdown
+
+- **Fetch Subtasks (410 Gone Error):**
+  - Changed from `/rest/api/3/search` JQL query to direct parent issue API
+  - Uses `/rest/api/3/issue/{key}?fields=subtasks` endpoint
+  - Fetches full details for each subtask individually
+  - Eliminates dependency on search API which may be disabled
+
+- **Jira Issue Transition - Required Fields:**
+  - Now handles all types of required fields during status transitions
+  - **Story Points:** Retrieves existing value or defaults to 3
+  - **Custom Text Fields (e.g., Quarter Plan):** Sets to "TBD - Set via DevEx AI Assistant"
+  - **Number Fields:** Defaults to 0
+  - **Select/Option Fields:** Uses first allowed value
+  - **User Fields:** Assigns to current user
+  - **Resolution Field:** Sets to "Done" for completion transitions
+  - Enhanced logging shows field schema and values for debugging
+  - Fixes transitions to IN PROGRESS and DONE with custom required fields
+
+- **Spring Boot Project Generation:**
+  - Added comprehensive error handling with try-catch wrappers
+  - Detailed logging at each generation step (directories, templates, files)
+  - Shows exact file paths where pom.xml/build.gradle is written
+  - Logs template reading, compilation, and writing success
+  - Better error messages showing which step failed
+
+- **Implement Jira Story - Complete Code Generation:**
+  - Now detects when project is missing build files (pom.xml, package.json, etc.)
+  - Warns user and offers to generate complete project setup
+  - Enhanced prompts emphasize generating COMPLETE, COMPILABLE code
+  - For Spring Boot without pom.xml:
+    - Creates complete pom.xml with all Spring Boot dependencies as FIRST file
+    - Generates Application main class with @SpringBootApplication
+    - Creates application.yml with configuration
+    - Includes ALL necessary imports and annotations
+  - Eliminates code placeholders ("...") and incomplete implementations
+  - Added 'pom', 'build', 'dependencies' to file type handling
+  - Result: Generates full, compilable Spring Boot projects
+
+- **Status Transition Names:**
+  - Updated to match actual Jira workflow status names
+  - Changed "In Progress" to "IN PROGRESS" (uppercase)
+  - Changed "Done" to "DONE" (uppercase)
+  - Case-insensitive matching still works for flexibility
+
+### Improved
+- **User Feedback During Story Implementation:**
+  - Shows transition progress indicator
+  - Success message: "✅ {ISSUE-KEY} transitioned to IN PROGRESS"
+  - Warning message if transition fails with specific reason
+  - Guides user to update status manually if needed
+
+- **Story Creation Success Message:**
+  - Comprehensive message with story key, summary, story points, priority
+  - Shows subtask creation status (X created, Y failed)
+  - Three action buttons: "Open in Jira", "Copy Link", "View Details"
+  - "View Details" opens output panel with complete breakdown
+
+## [1.3.38] - 2026-02-03
+
+### Fixed
+- **Jira Configuration:** Fixed configuration key paths in all Jira commands
+  - Changed from `devex.jiraBaseUrl` to `devex.jira.baseUrl`
+  - Changed from `devex.jiraEmail` to `devex.jira.email`
+  - Changed from `devex.jiraApiToken` to `devex.jira.apiToken`
+  - Resolves "Jira is not configured" error when settings are actually configured
+  - Affects: Create Jira Story, Implement Jira Story, Complete Jira Story commands
+
+### Added
+- **Automatic Git Branch Creation:** When implementing a Jira story/task, the extension now automatically:
+  - Creates a new feature branch named `feature/{ISSUE-KEY}-{sanitized-summary}`
+  - Checks out the branch before generating code
+  - Checks if branch already exists and prompts user to checkout
+  - Example: `feature/DEV-123-implement-acb-endpoint`
+  - Gracefully handles Git errors without failing the implementation
+
 ## [1.3.31] - 2026-02-02
 
 ### Added

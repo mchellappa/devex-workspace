@@ -14,7 +14,6 @@ import { fetchMyJiraTicketsCommand } from './commands/fetchMyJiraTickets';
 import { analyzeJiraTicketCommand } from './commands/analyzeJiraTicket';
 import { addJiraCommentCommand } from './commands/addJiraComment';
 import { generateKDD } from './commands/generateKDD';
-import { generateLLDFromKDD } from './commands/generateLLDFromKDD';
 import { createJiraStoryFromLLD } from './commands/createJiraStoryFromLLD';
 import { implementJiraStory } from './commands/implementJiraStory';
 import { completeJiraStory } from './commands/completeJiraStory';
@@ -131,12 +130,6 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('devex.generateKDD', () => 
             generateKDD(context)
-        )
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('devex.generateLLDFromKDD', (fileUri?: vscode.Uri) => 
-            generateLLDFromKDD(context, telemetryService, fileUri)
         )
     );
 

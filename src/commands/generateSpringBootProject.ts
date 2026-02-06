@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 const SwaggerParser = require('swagger-parser');
 import { AIService } from '../services/aiService';
 import { SpringBootGenerator, SpringBootProjectConfig, OpenAPIEndpoint } from '../services/springBootGenerator';
 import { TemplateProvider } from '../services/templateProvider';
 import { TelemetryService } from '../services/telemetryService';
+import { JiraService } from '../services/jiraService';
 import { getConfig } from '../utils/config';
 import { logger } from '../utils/logger';
 
@@ -77,7 +79,106 @@ export async function generateSpringBootProjectCommand(
 
                 await generator.generateProject(springBootConfig, endpoints);
 
-                progress.report({ increment: 100, message: 'Project generated successfully!' });
+                progress.report({ increment: 80, message: 'Committing to git...' });
+
+                // Git commit - stage and commit all generated files
+                try {
+                    const gitExtension = vscode.extensions.getExtension('vscode.git')?.exports;
+                    if (gitExtension) {
+                        const git = gitExtension.getAPI(1);
+                        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+                        if (git.repositories.length > 0 && workspaceFolder) {
+                            const repo = git.repositories[0];
+                            const projectPath = path.join(projectConfig.targetDirectory, projectConfig.projectName);
+                            
+                            // Get all generated files
+                            const generatedFiles = await getAllFiles(projectPath);
+                            
+                            // Stage all files
+                            for (const filePath of generatedFiles) {
+                                try {
+                                    await repo.add([filePath]);
+                                } catch (addError) {
+                                    // Continue if file already staged
+                                }
+                            }
+                            
+                            // Commit
+                            const commitMessage = `Generated Spring Boot project: ${projectConfig.projectName}\n\nEndpoints: ${endpoints.length}\nBuild tool: ${springBootConfig.buildTool}`;
+                            await repo.commit(commitMessage);
+                            
+                            vscode.window.showInformationMessage(`✅ Committed project to git`);
+                            progress.report({ increment: 10, message: 'Committed to git' });
+                        }
+                    }
+                } catch (gitError: any) {
+                    logger.warn(`Git commit failed: ${gitError.message}`);
+                    vscode.window.showWarningMessage(`⚠️ Could not commit to git: ${gitError.message}`);
+                }
+
+                progress.report({ increment: 5, message: 'Checking Jira integration...' });
+
+                // Jira integration - optional, only if user has Jira configured
+                try {
+                    const jiraConfig = vscode.workspace.getConfiguration('devex');
+                    const jiraUrl = jiraConfig.get<string>('jira.url');
+                    const jiraEmail = jiraConfig.get<string>('jira.email');
+                    const jiraToken = jiraConfig.get<string>('jira.token');
+                    
+                    if (jiraUrl && jiraEmail && jiraToken) {
+                        // Ask if they want to link to a Jira story
+                        const linkToJira = await vscode.window.showQuickPick(
+                            ['Yes', 'No'],
+                            { 
+                                placeHolder: 'Link this project to a Jira story?',
+                                title: 'Jira Integration'
+                            }
+                        );
+                        
+                        if (linkToJira === 'Yes') {
+                            const jiraService = new JiraService(jiraUrl, jiraEmail, jiraToken);
+                            
+                            // Get Jira issue key from user
+                            const issueKey = await vscode.window.showInputBox({
+                                prompt: 'Enter Jira issue key (e.g., PROJ-123)',
+                                placeHolder: 'PROJ-123',
+                                validateInput: (value) => {
+                                    return /^[A-Z]+-\d+$/.test(value) ? null : 'Invalid Jira issue key format';
+                                }
+                            });
+                            
+                            if (issueKey) {
+                                progress.report({ message: 'Updating Jira...' });
+                                
+                                // Add comment to Jira
+                                const comment = `**Spring Boot Project Generated**\n\n` +
+                                    `- Project: ${projectConfig.projectName}\n` +
+                                    `- Endpoints: ${endpoints.length}\n` +
+                                    `- Build Tool: ${springBootConfig.buildTool}\n` +
+                                    `- Java Version: ${springBootConfig.javaVersion}\n\n` +
+                                    `_Generated by DevEx AI Assistant_`;
+                                
+                                await jiraService.addComment(issueKey, comment);
+                                
+                                // Try to transition to IN PROGRESS
+                                try {
+                                    await jiraService.transitionIssue(issueKey, 'IN PROGRESS');
+                                    vscode.window.showInformationMessage(`✅ ${issueKey} transitioned to IN PROGRESS`);
+                                } catch (transitionError: any) {
+                                    logger.warn(`Could not transition issue: ${transitionError.message}`);
+                                    vscode.window.showWarningMessage(
+                                        `⚠️ Could not transition ${issueKey} to IN PROGRESS. Please update manually in Jira.`
+                                    );
+                                }
+                            }
+                        }
+                    }
+                } catch (jiraError: any) {
+                    logger.warn(`Jira integration failed: ${jiraError.message}`);
+                    // Don't show error to user - Jira is optional
+                }
+
+                progress.report({ increment: 5, message: 'Project generated successfully!' });
 
                 // Calculate time taken
                 const actualTimeSeconds = (Date.now() - startTime) / 1000;
@@ -274,4 +375,29 @@ function extractEndpoints(openApiSpec: any): OpenAPIEndpoint[] {
     }
 
     return endpoints;
+}
+
+/**
+ * Recursively get all files in a directory
+ */
+async function getAllFiles(dirPath: string, arrayOfFiles: string[] = []): Promise<string[]> {
+    try {
+        const files = await fs.promises.readdir(dirPath);
+        
+        for (const file of files) {
+            const filePath = path.join(dirPath, file);
+            const stat = await fs.promises.stat(filePath);
+            
+            if (stat.isDirectory()) {
+                arrayOfFiles = await getAllFiles(filePath, arrayOfFiles);
+            } else {
+                arrayOfFiles.push(filePath);
+            }
+        }
+        
+        return arrayOfFiles;
+    } catch (error) {
+        logger.warn(`Could not read directory ${dirPath}: ${error}`);
+        return arrayOfFiles;
+    }
 }

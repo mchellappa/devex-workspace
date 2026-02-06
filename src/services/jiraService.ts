@@ -707,12 +707,18 @@ export class JiraService {
         try {
             logger.info(`Creating subtask for ${parentKey}: ${summary}`);
 
-            // First, get the parent issue to extract project key
+            // First, get the parent issue to extract project key and details
             const parentIssue = await this.fetchIssue(parentKey);
             
             if (!parentIssue) {
                 throw new Error(`Parent issue ${parentKey} not found`);
             }
+            
+            // Extract project key from parent issue key (e.g., "DEV-123" -> "DEV")
+            const projectKey = parentKey.split('-')[0];
+            
+            // Get the subtask issue type ID for this project
+            const subtaskTypeId = await this.getSubtaskIssueTypeId(projectKey);
             
             const url = `${this.config!.baseUrl}/rest/api/3/issue`;
             const auth = Buffer.from(`${this.config!.email}:${this.config!.apiToken}`).toString('base64');
@@ -720,7 +726,7 @@ export class JiraService {
             const subtaskData = {
                 fields: {
                     project: {
-                        key: parentIssue.key.split('-')[0]
+                        key: projectKey
                     },
                     parent: {
                         key: parentKey
@@ -741,11 +747,15 @@ export class JiraService {
                             }
                         ]
                     },
-                    issuetype: {
+                    issuetype: subtaskTypeId ? {
+                        id: subtaskTypeId
+                    } : {
                         name: 'Subtask'
                     }
                 }
             };
+
+            logger.info(`Subtask payload: ${JSON.stringify(subtaskData, null, 2)}`);
 
             const response = await fetch(url, {
                 method: 'POST',
@@ -760,7 +770,7 @@ export class JiraService {
             if (!response.ok) {
                 const errorText = await response.text();
                 logger.error(`Create subtask failed: ${response.status} ${response.statusText}\nResponse: ${errorText}`);
-                throw new Error(`Failed to create subtask: ${response.status} ${response.statusText}`);
+                throw new Error(`Failed to create subtask: ${response.status} ${response.statusText}\nDetails: ${errorText}`);
             }
 
             const createdSubtask: any = await response.json();
@@ -836,16 +846,15 @@ export class JiraService {
         try {
             logger.info(`Fetching subtasks for ${parentKey}`);
 
-            const jql = `parent = ${parentKey}`;
-            const url = `${this.config!.baseUrl}/rest/api/3/search?jql=${encodeURIComponent(jql)}`;
+            // Fetch the parent issue with subtasks field
+            const url = `${this.config!.baseUrl}/rest/api/3/issue/${parentKey}?fields=subtasks`;
             const auth = Buffer.from(`${this.config!.email}:${this.config!.apiToken}`).toString('base64');
 
             const response = await fetch(url, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Basic ${auth}`,
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
+                    'Accept': 'application/json'
                 }
             });
 
@@ -855,18 +864,68 @@ export class JiraService {
                 throw new Error(`Failed to fetch subtasks: ${response.status} ${response.statusText}`);
             }
 
-            const data: any = await response.json();
-            const subtasks: JiraIssue[] = data.issues.map((issue: any) => ({
-                key: issue.key,
-                summary: issue.fields.summary,
-                description: this.extractTextFromADF(issue.fields.description),
-                issueType: issue.fields.issuetype.name,
-                status: issue.fields.status.name,
-                priority: issue.fields.priority?.name || 'Medium',
-                assignee: issue.fields.assignee?.displayName,
-                reporter: issue.fields.reporter?.displayName
-            }));
+            const parentIssue: any = await response.json();
+            
+            if (!parentIssue.fields.subtasks || parentIssue.fields.subtasks.length === 0) {
+                logger.info(`No subtasks found for ${parentKey}`);
+                return [];
+            }
 
+            // Fetch full details for each subtask
+            const subtaskPromises = parentIssue.fields.subtasks.map(async (subtaskRef: any) => {
+                try {
+                    const subtaskUrl = `${this.config!.baseUrl}/rest/api/3/issue/${subtaskRef.key}`;
+                    const subtaskResponse = await fetch(subtaskUrl, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Basic ${auth}`,
+                            'Accept': 'application/json'
+                        }
+                    });
+
+                    if (!subtaskResponse.ok) {
+                        logger.warn(`Failed to fetch subtask ${subtaskRef.key}: ${subtaskResponse.status}`);
+                        // Return basic info from parent's subtask reference
+                        return {
+                            key: subtaskRef.key,
+                            summary: subtaskRef.fields.summary,
+                            description: '',
+                            issueType: subtaskRef.fields.issuetype.name,
+                            status: subtaskRef.fields.status.name,
+                            priority: subtaskRef.fields.priority?.name || 'Medium',
+                            assignee: subtaskRef.fields.assignee?.displayName,
+                            reporter: undefined
+                        };
+                    }
+
+                    const subtaskData: any = await subtaskResponse.json();
+                    return {
+                        key: subtaskData.key,
+                        summary: subtaskData.fields.summary,
+                        description: this.extractTextFromADF(subtaskData.fields.description),
+                        issueType: subtaskData.fields.issuetype.name,
+                        status: subtaskData.fields.status.name,
+                        priority: subtaskData.fields.priority?.name || 'Medium',
+                        assignee: subtaskData.fields.assignee?.displayName,
+                        reporter: subtaskData.fields.reporter?.displayName
+                    };
+                } catch (err) {
+                    logger.warn(`Error fetching subtask ${subtaskRef.key}: ${err}`);
+                    // Return basic info from parent's subtask reference
+                    return {
+                        key: subtaskRef.key,
+                        summary: subtaskRef.fields.summary,
+                        description: '',
+                        issueType: subtaskRef.fields.issuetype.name,
+                        status: subtaskRef.fields.status.name,
+                        priority: subtaskRef.fields.priority?.name || 'Medium',
+                        assignee: subtaskRef.fields.assignee?.displayName,
+                        reporter: undefined
+                    };
+                }
+            });
+
+            const subtasks = await Promise.all(subtaskPromises);
             logger.info(`Found ${subtasks.length} subtasks for ${parentKey}`);
 
             return subtasks;
@@ -891,8 +950,8 @@ export class JiraService {
         try {
             logger.info(`Transitioning ${issueKey} to ${toStatus}`);
 
-            // First, get available transitions
-            const transitionsUrl = `${this.config!.baseUrl}/rest/api/3/issue/${issueKey}/transitions`;
+            // First, get available transitions with field information
+            const transitionsUrl = `${this.config!.baseUrl}/rest/api/3/issue/${issueKey}/transitions?expand=transitions.fields`;
             const auth = Buffer.from(`${this.config!.email}:${this.config!.apiToken}`).toString('base64');
 
             const transitionsResponse = await fetch(transitionsUrl, {
@@ -914,29 +973,185 @@ export class JiraService {
             );
 
             if (!transition) {
-                logger.warn(`Transition to "${toStatus}" not available for ${issueKey}`);
-                return;
+                const availableTransitions = transitionsData.transitions.map((t: any) => t.name).join(', ');
+                logger.warn(`Transition to "${toStatus}" not available for ${issueKey}. Available: ${availableTransitions}`);
+                throw new Error(`Cannot transition to "${toStatus}". Available transitions: ${availableTransitions}`);
             }
 
+            logger.info(`Found transition: ${transition.name} (ID: ${transition.id})`);
+
+            // Build transition payload with required fields
+            const transitionPayload: any = {
+                transition: {
+                    id: transition.id
+                }
+            };
+
+            // Check if transition has required fields
+            if (transition.fields) {
+                const requiredFields = Object.keys(transition.fields).filter(
+                    fieldKey => transition.fields[fieldKey].required
+                );
+
+                if (requiredFields.length > 0) {
+                    logger.info(`Transition requires fields: ${requiredFields.join(', ')}`);
+                    transitionPayload.fields = {};
+
+                    // Try to get current issue to fetch existing field values
+                    let currentIssue: any = null;
+                    try {
+                        currentIssue = await this.fetchIssue(issueKey);
+                    } catch (err) {
+                        logger.warn(`Could not fetch current issue for field values: ${err}`);
+                    }
+
+                    // Handle common required fields
+                    for (const fieldKey of requiredFields) {
+                        const field = transition.fields[fieldKey];
+                        const fieldName = (field.name || '').toLowerCase();
+                        const fieldKeyLower = fieldKey.toLowerCase();
+                        
+                        logger.info(`Processing required field: ${fieldKey} (${field.name})`);
+                        logger.info(`  Schema: ${JSON.stringify(field.schema)}`);
+                        logger.info(`  AllowedValues: ${field.allowedValues ? field.allowedValues.length : 'none'}`);
+                        
+                        // Resolution field (common for Done transitions)
+                        if (fieldKey === 'resolution' || fieldName === 'resolution') {
+                            transitionPayload.fields[fieldKey] = { name: 'Done' };
+                            logger.info('  ✓ Added resolution: Done');
+                        }
+                        // Comment field
+                        else if (fieldKey === 'comment' || fieldName === 'comment') {
+                            transitionPayload.fields[fieldKey] = [
+                                {
+                                    add: {
+                                        body: {
+                                            type: 'doc',
+                                            version: 1,
+                                            content: [
+                                                {
+                                                    type: 'paragraph',
+                                                    content: [
+                                                        {
+                                                            type: 'text',
+                                                            text: 'Transitioned via DevEx AI Assistant'
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ];
+                            logger.info('  ✓ Added comment field');
+                        }
+                        // For other required fields, use existing value or log warning
+                        else if (currentIssue?.fields?.[fieldKey]) {
+                            // Use existing value from current issue
+                            transitionPayload.fields[fieldKey] = currentIssue.fields[fieldKey];
+                            logger.info(`  ✓ Added ${field.name}: ${JSON.stringify(currentIssue.fields[fieldKey])}`);
+                        }
+                        // Generic string fields
+                        else if (field.schema?.type === 'string') {
+                            transitionPayload.fields[fieldKey] = 'TBD';
+                            logger.info(`  ✓ Added text field ${field.name}: TBD`);
+                            logger.info(`Added text field ${field.name}: TBD`);
+                        }
+                        // Custom number fields
+                        else if (field.schema?.type === 'number') {
+                            transitionPayload.fields[fieldKey] = 0;
+                            logger.info(`Added number field ${field.name}: 0`);
+                        }
+                        // Select/Option fields
+                        else if (field.schema?.type === 'option' && field.allowedValues && field.allowedValues.length > 0) {
+                            transitionPayload.fields[fieldKey] = { value: field.allowedValues[0].value || field.allowedValues[0].name };
+                            logger.info(`Added option field ${field.name}: ${field.allowedValues[0].value || field.allowedValues[0].name}`);
+                        }
+                        // User fields
+                        else if (field.schema?.type === 'user') {
+                            // Use current user
+                            transitionPayload.fields[fieldKey] = { accountId: this.config!.email };
+                            logger.info(`Added user field ${field.name}: current user`);
+                        }
+                        else {
+                            logger.warn(`Required field "${fieldKey}" (${field.name}) not handled automatically. Schema: ${JSON.stringify(field.schema)}`);
+                        }
+                    }
+                }
+            }
+
+            logger.info(`Transition payload: ${JSON.stringify(transitionPayload, null, 2)}`);
+
             // Execute the transition
-            const response = await fetch(transitionsUrl, {
+            const response = await fetch(transitionsUrl.split('?')[0], {
                 method: 'POST',
                 headers: {
                     'Authorization': `Basic ${auth}`,
                     'Accept': 'application/json',
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    transition: {
-                        id: transition.id
-                    }
-                })
+                body: JSON.stringify(transitionPayload)
             });
 
             if (!response.ok) {
                 const errorText = await response.text();
-                logger.error(`Transition failed: ${response.status} ${response.statusText}\nResponse: ${errorText}`);
-                throw new Error(`Failed to transition issue: ${response.status} ${response.statusText}`);
+                logger.error(`Transition failed: ${response.status} ${response.statusText}\nPayload: ${JSON.stringify(transitionPayload, null, 2)}\nResponse: ${errorText}`);
+                
+                // Try to parse error details
+                let errorDetails = errorText;
+                let missingFieldsInfo: { name: string, fieldKey: string }[] = [];
+                
+                try {
+                    const errorJson = JSON.parse(errorText);
+                    if (errorJson.errorMessages && errorJson.errorMessages.length > 0) {
+                        errorDetails = errorJson.errorMessages.join('; ');
+                    } else if (errorJson.errors) {
+                        // Extract field names from errors
+                        for (const [fieldKey, errorMsg] of Object.entries(errorJson.errors)) {
+                            const fieldMeta = transition.fields[fieldKey];
+                            const fieldName = fieldMeta?.name || fieldKey;
+                            missingFieldsInfo.push({ name: fieldName, fieldKey });
+                        }
+                        
+                        errorDetails = Object.entries(errorJson.errors)
+                            .map(([key, value]) => `${key}: ${value}`)
+                            .join('; ');
+                    }
+                } catch (parseError) {
+                    // Keep original error text
+                }
+                
+                // If we detected missing required fields, show conversational dialog
+                if (missingFieldsInfo.length > 0) {
+                    const vscode = await import('vscode');
+                    const fieldsList = missingFieldsInfo.map(f => `  • ${f.name}`).join('\n');
+                    
+                    const action = await vscode.window.showErrorMessage(
+                        `⚠️ Cannot transition ${issueKey} to ${toStatus}\n\nThe following fields are required:\n${fieldsList}\n\nWould you like to open Jira to fill these in?`,
+                        { modal: true },
+                        'Open in Jira',
+                        'Cancel'
+                    );
+                    
+                    if (action === 'Open in Jira') {
+                        const issueUrl = `${this.config!.baseUrl}/browse/${issueKey}`;
+                        await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+                        
+                        // Ask if they want to retry after updating
+                        const retry = await vscode.window.showInformationMessage(
+                            `✅ Jira opened in browser.\n\nAfter filling in the required fields, click "Retry" to attempt the transition again.`,
+                            'Retry Transition',
+                            'Skip for Now'
+                        );
+                        
+                        if (retry === 'Retry Transition') {
+                            logger.info(`Retrying transition for ${issueKey} after user update...`);
+                            return this.transitionIssue(issueKey, toStatus);
+                        }
+                    }
+                }
+                
+                throw new Error(`Failed to transition issue: ${response.status} ${response.statusText}. ${errorDetails}`);
             }
 
             logger.info(`Successfully transitioned ${issueKey} to ${toStatus}`);
@@ -944,6 +1159,54 @@ export class JiraService {
         } catch (error: any) {
             logger.error(`Failed to transition issue: ${error.message}`);
             throw error;
+        }
+    }
+
+    /**
+     * Get the subtask issue type ID for a project
+     */
+    private async getSubtaskIssueTypeId(projectKey: string): Promise<string | null> {
+        if (!this.config) {
+            return null;
+        }
+
+        try {
+            const url = `${this.config.baseUrl}/rest/api/3/project/${projectKey}`;
+            const auth = Buffer.from(`${this.config.email}:${this.config.apiToken}`).toString('base64');
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                logger.warn(`Failed to get project details: ${response.status}`);
+                return null;
+            }
+
+            const projectData: any = await response.json();
+            
+            // Find the subtask issue type
+            const subtaskType = projectData.issueTypes?.find((type: any) => 
+                type.subtask === true || 
+                type.name.toLowerCase() === 'subtask' ||
+                type.name.toLowerCase() === 'sub-task'
+            );
+
+            if (subtaskType) {
+                logger.info(`Found subtask type ID: ${subtaskType.id} (${subtaskType.name})`);
+                return subtaskType.id;
+            }
+
+            logger.warn(`No subtask issue type found for project ${projectKey}`);
+            return null;
+
+        } catch (error: any) {
+            logger.warn(`Error getting subtask type ID: ${error.message}`);
+            return null;
         }
     }
 }

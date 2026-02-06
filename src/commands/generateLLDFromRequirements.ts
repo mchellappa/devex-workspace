@@ -5,6 +5,8 @@ import { TelemetryService } from '../services/telemetryService';
 import { AIService } from '../services/aiService';
 import { JiraService } from '../services/jiraService';
 import { EmailService } from '../services/emailService';
+import { LLDClarificationService, ClarificationQuestion } from '../services/lldClarificationService';
+import { convertToDocx } from './convertMarkdown';
 import { 
     Document, 
     Packer, 
@@ -50,13 +52,7 @@ interface ExtractedRequirements {
     acceptanceCriteria: string[];
 }
 
-interface ClarificationQuestion {
-    id: string;
-    question: string;
-    options?: string[];
-    category: 'architecture' | 'security' | 'integration' | 'performance' | 'infrastructure' | 'other';
-    required: boolean;
-}
+// ClarificationQuestion now imported from LLDClarificationService
 
 interface LLDSection {
     title: string;
@@ -81,6 +77,7 @@ interface OutputFormatConfig {
 export async function generateLLDFromRequirements(context: vscode.ExtensionContext) {
     try {
         const aiService = new AIService();
+        const clarificationService = new LLDClarificationService();
         
         // Step 1: Get requirements document
         const requirementsDoc = await selectRequirementsDocument();
@@ -88,11 +85,23 @@ export async function generateLLDFromRequirements(context: vscode.ExtensionConte
             return;
         }
 
-        // Step 1.5: Select output format
-        const outputFormat = await selectOutputFormat();
-        if (!outputFormat) {
+        // Step 1.5: Select output format using service
+        const selectedFormat = await clarificationService.selectOutputFormat();
+        if (!selectedFormat) {
             return;
         }
+
+        // Build full output format config with settings
+        const config = vscode.workspace.getConfiguration('devex.lld');
+        const outputFormat: OutputFormatConfig = {
+            format: selectedFormat.format,
+            includeTableOfContents: config.get('includeTableOfContents', true),
+            includeCoverPage: config.get('includeCoverPage', true),
+            enableTrackChanges: config.get('enableTrackChanges', true),
+            styleTemplate: config.get('corporateTemplate'),
+            embedDiagrams: config.get('embedDiagrams', true),
+            diagramFormat: config.get('diagramFormat', 'png')
+        };
 
         // Step 2: Show progress and extract requirements
         await vscode.window.withProgress({
@@ -107,12 +116,16 @@ export async function generateLLDFromRequirements(context: vscode.ExtensionConte
             
             progress.report({ increment: 30, message: "Requirements extracted successfully" });
             
-            // Step 3: Generate clarification questions
+            // Step 3: Generate clarification questions using service
             progress.report({ increment: 40, message: "Analyzing gaps and preparing questions..." });
-            const questions = await generateClarificationQuestions(extractedReqs, aiService);
+            const requirementsContext = `
+Functional: ${extractedReqs.functionalRequirements.join(', ')}
+Non-Functional: ${extractedReqs.nonFunctionalRequirements.join(', ')}
+Technical Constraints: ${extractedReqs.technicalConstraints.join(', ')}`;
+            const questions = await clarificationService.generateClarificationQuestions(requirementsContext, aiService);
             
-            // Step 4: Ask clarification questions (interactive)
-            const answers = await askClarificationQuestions(questions);
+            // Step 4: Ask clarification questions using service
+            const answers = await clarificationService.askClarificationQuestions(questions);
             
             // Step 5: Generate LLD sections
             progress.report({ increment: 50, message: "Generating LLD sections..." });
@@ -139,57 +152,7 @@ export async function generateLLDFromRequirements(context: vscode.ExtensionConte
 /**
  * Select output format for generated LLD
  */
-async function selectOutputFormat(): Promise<OutputFormatConfig | undefined> {
-    interface FormatOption {
-        label: string;
-        description: string;
-        detail: string;
-        format: 'docx' | 'markdown' | 'html';
-    }
-    
-    const options: FormatOption[] = [
-        {
-            label: '⭐ DOCX (Word Document) - Recommended',
-            description: 'Professional format with rich formatting',
-            detail: 'Includes tables, diagrams, track changes. Easy to review and approve.',
-            format: 'docx'
-        },
-        {
-            label: '📝 Markdown (.md)',
-            description: 'Plain text, Git-friendly',
-            detail: 'Good for internal developer documentation. Easy to version control.',
-            format: 'markdown'
-        },
-        {
-            label: '📄 HTML Preview',
-            description: 'View in browser',
-            detail: 'Good for quick review before finalizing. Can save as PDF later.',
-            format: 'html'
-        }
-    ];
-    
-    const selected = await vscode.window.showQuickPick(options, {
-        placeHolder: 'Select output format for generated LLD',
-        title: 'LLD Output Format'
-    });
-    
-    if (!selected) {
-        return undefined;
-    }
-    
-    // Get configuration from settings
-    const config = vscode.workspace.getConfiguration('devex.lld');
-    
-    return {
-        format: selected.format,
-        includeTableOfContents: config.get('includeTableOfContents', true),
-        includeCoverPage: config.get('includeCoverPage', true),
-        enableTrackChanges: config.get('enableTrackChanges', true),
-        styleTemplate: config.get('corporateTemplate'),
-        embedDiagrams: config.get('embedDiagrams', true),
-        diagramFormat: config.get('diagramFormat', 'png')
-    };
-}
+// selectOutputFormat removed - now using LLDClarificationService
 
 /**
  * Select requirements document from workspace or Jira
@@ -409,154 +372,7 @@ Each should be an array of strings.`;
 /**
  * Generate clarification questions based on extracted requirements
  */
-async function generateClarificationQuestions(
-    requirements: ExtractedRequirements,
-    aiService: AIService
-): Promise<ClarificationQuestion[]> {
-    const systemPrompt = `You are an expert software architect. Based on the extracted requirements, generate 3-5 critical clarifying questions that need answers to create a complete LLD. Focus on:
-- Authentication/authorization approach
-- Data storage strategy
-- Error handling approach
-- Integration patterns
-- Security requirements
-- Deployment and infrastructure preferences
-
-Return a JSON array of questions with this structure:
-[{
-  "id": "unique_id",
-  "question": "Question text?",
-  "options": ["Option 1", "Option 2", "Option 3"] or null,
-  "category": "architecture|security|integration|performance|infrastructure|other",
-  "required": true|false
-}]`;
-
-    const prompt = `Requirements:
-Functional: ${requirements.functionalRequirements.join(', ')}
-Non-Functional: ${requirements.nonFunctionalRequirements.join(', ')}
-Technical Constraints: ${requirements.technicalConstraints.join(', ')}
-
-Generate clarifying questions:`;
-    
-    try {
-        const response = await aiService.callLanguageModel(prompt, systemPrompt);
-        const jsonMatch = response.content.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            return parsed;
-        }
-    } catch (error) {
-        // Fall through to default questions
-    }
-    
-    // Default questions if AI fails
-    return [
-        {
-            id: 'hosting_platform',
-            question: 'Where will the application be hosted?',
-            options: ['AKS (Azure Kubernetes Service)', 'Azure App Service', 'Azure Container Instances', 'On-premises Kubernetes', 'Other'],
-            category: 'infrastructure',
-            required: true
-        },
-        {
-            id: 'api_gateway',
-            question: 'How will APIs be exposed to consumers?',
-            options: ['Azure APIM (API Management)', 'Direct exposure', 'Azure Application Gateway', 'Kong', 'Other'],
-            category: 'infrastructure',
-            required: true
-        },
-        {
-            id: 'database',
-            question: 'What database will be used?',
-            options: ['Azure SQL Managed Instance', 'Azure SQL Database', 'PostgreSQL', 'MongoDB', 'Cosmos DB', 'Other'],
-            category: 'architecture',
-            required: true
-        },
-        {
-            id: 'auth_mechanism',
-            question: 'What authentication mechanism should be used?',
-            options: ['OAuth 2.0', 'JWT', 'Azure AD', 'Managed Identity', 'SAML', 'Other'],
-            category: 'security',
-            required: true
-        },
-        {
-            id: 'monitoring',
-            question: 'What monitoring and observability tools will be used?',
-            options: ['Azure Application Insights', 'Azure Monitor', 'Prometheus + Grafana', 'ELK Stack', 'Other'],
-            category: 'infrastructure',
-            required: false
-        }
-    ];
-}
-
-/**
- * Ask clarification questions interactively
- */
-async function askClarificationQuestions(
-    questions: ClarificationQuestion[]
-): Promise<Map<string, string>> {
-    const answers = new Map<string, string>();
-    
-    // Get configured defaults from settings
-    const config = vscode.workspace.getConfiguration('devex.infrastructure');
-    const defaultHosting = config.get<string>('hostingPlatform', 'AKS (Azure Kubernetes Service)');
-    const defaultApiGateway = config.get<string>('apiGateway', 'Azure APIM (API Management)');
-    const defaultDatabase = config.get<string>('database', 'Azure SQL Managed Instance');
-    const defaultMonitoring = config.get<string>('monitoring', 'Azure Application Insights');
-    
-    // Pre-fill answers with defaults for infrastructure questions
-    const defaults = new Map<string, string>([
-        ['hosting_platform', defaultHosting],
-        ['api_gateway', defaultApiGateway],
-        ['database', defaultDatabase],
-        ['monitoring', defaultMonitoring]
-    ]);
-    
-    vscode.window.showInformationMessage(
-        `I need to ask ${questions.length} clarification questions. Some have defaults from your settings.`
-    );
-    
-    for (const question of questions) {
-        let answer: string | undefined;
-        const defaultAnswer = defaults.get(question.id);
-        
-        if (question.options && question.options.length > 0) {
-            // Multiple choice question with default
-            const options = defaultAnswer 
-                ? [defaultAnswer, ...question.options.filter(o => o !== defaultAnswer), 'Other', 'Skip']
-                : [...question.options, 'Other', 'Skip'];
-            
-            answer = await vscode.window.showQuickPick(
-                options,
-                {
-                    placeHolder: question.question + (defaultAnswer ? ` (Default: ${defaultAnswer})` : ''),
-                    title: `Question ${questions.indexOf(question) + 1} of ${questions.length}`
-                }
-            );
-            
-            // If user just hits enter and there's a default, use it
-            if (!answer && defaultAnswer) {
-                answer = defaultAnswer;
-            }
-        } else {
-            // Free text question
-            answer = await vscode.window.showInputBox({
-                prompt: question.question,
-                value: defaultAnswer,
-                placeHolder: defaultAnswer || 'Type your answer or leave empty to skip',
-                title: `Question ${questions.indexOf(question) + 1} of ${questions.length}`
-            });
-        }
-        
-        if (answer && answer !== 'Skip') {
-            answers.set(question.id, answer);
-        } else if (defaultAnswer && !answer) {
-            // Use default if no answer provided
-            answers.set(question.id, defaultAnswer);
-        }
-    }
-    
-    return answers;
-}
+// generateClarificationQuestions and askClarificationQuestions removed - now using LLDClarificationService
 
 /**
  * Generate LLD sections using AI
@@ -634,11 +450,106 @@ async function generateSectionContent(
     context: string,
     aiService: AIService
 ): Promise<string> {
+    // Standard company patterns - no need to elaborate in every LLD
+    const standardPatternSections = [
+        '14. Monitoring & Observability',
+        '13. Deployment Strategy',
+        '11. Performance Considerations', // Scalability
+        '12. Testing Strategy' // Includes test environment, reporting, CI/CD
+    ];
+    
+    // Check if this is a standard pattern section
+    const isStandardPattern = standardPatternSections.some(pattern => 
+        sectionTitle.includes('Monitoring') || 
+        sectionTitle.includes('Observability') ||
+        sectionTitle.includes('Deployment') ||
+        sectionTitle.includes('Scalability') ||
+        sectionTitle.includes('Performance Considerations') ||
+        sectionTitle.includes('Testing Strategy') ||
+        sectionTitle.toLowerCase().includes('test environment') ||
+        sectionTitle.toLowerCase().includes('test reporting') ||
+        sectionTitle.toLowerCase().includes('ci/cd') ||
+        sectionTitle.toLowerCase().includes('devops')
+    );
+    
+    if (isStandardPattern) {
+        return `## ${sectionTitle}
+
+> **Note:** This section follows standard company patterns and practices.
+
+### Standard Practices Applied
+
+This implementation adheres to the organization's standard patterns for:
+
+- **Monitoring and Observability**: Standard Application Insights configuration with custom metrics, distributed tracing, and alerting
+- **Deployment Architecture**: Standard AKS deployment with blue-green strategy, automated rollback, and GitOps workflows
+- **Performance & Scalability**: Horizontal Pod Autoscaling (HPA) based on CPU/memory, standard scaling policies, and load testing benchmarks
+- **Testing Strategy**: Unit tests (80%+ coverage), integration tests, E2E tests using standard frameworks
+- **Test Environments**: Standard dev/test/staging environment configuration with infrastructure-as-code
+- **Test Reporting**: Standard test reporting via Azure DevOps Test Plans with automated quality gates
+- **CI/CD Pipeline**: Standard Azure DevOps pipeline templates with build validation, security scanning, and deployment gates
+
+### Reference Documentation
+
+For detailed specifications, refer to:
+- **Company Architecture Standards**: [Internal Wiki - Architecture Patterns]
+- **DevOps Standards**: [Internal Wiki - CI/CD Guidelines]  
+- **Observability Standards**: [Internal Wiki - Monitoring Best Practices]
+- **Testing Standards**: [Internal Wiki - Test Strategy & Automation]
+
+### Project-Specific Customizations
+
+_Document any deviations from standard patterns or project-specific customizations:_
+
+- None documented at this time (follows all standard patterns)
+
+_Note: Update this section if the project requires deviations from standard practices._
+
+`;
+    }
+    
+    // Extract technology stack from context for code snippet guidance
+    const technologyStackMatch = context.match(/technology_stack:\s*([^\n]+)/i);
+    const technologyStack = technologyStackMatch ? technologyStackMatch[1].trim() : 'Java (Spring Boot)';
+    
+    let codeExampleGuidance = '';
+    if (technologyStack.toLowerCase().includes('java') || technologyStack.toLowerCase().includes('spring')) {
+        codeExampleGuidance = `
+**CRITICAL - Code Examples**: Use Java and Spring Boot for all code snippets. Include:
+- Spring Boot annotations (@RestController, @Service, @Repository, @Entity, etc.)
+- Java best practices (Optional, Stream API, try-with-resources)
+- Spring dependency injection patterns
+- JPA/Hibernate for data access
+- Spring Security for authentication/authorization examples`;
+    } else if (technologyStack.toLowerCase().includes('.net') || technologyStack.toLowerCase().includes('c#')) {
+        codeExampleGuidance = `
+**CRITICAL - Code Examples**: Use C# and .NET for all code snippets. Include:
+- ASP.NET Core patterns (Controllers, Services, Repositories)
+- C# best practices (async/await, LINQ, using statements, nullable reference types)
+- Dependency injection with IServiceCollection
+- Entity Framework Core for data access
+- ASP.NET Core Identity or JWT for authentication examples`;
+    } else if (technologyStack.toLowerCase().includes('node') || technologyStack.toLowerCase().includes('javascript')) {
+        codeExampleGuidance = `
+**CRITICAL - Code Examples**: Use Node.js and TypeScript/JavaScript for all code snippets. Include:
+- Express.js or NestJS patterns
+- Modern JavaScript/TypeScript features (async/await, arrow functions, destructuring)
+- TypeScript type definitions and interfaces
+- Common Node.js patterns (middleware, error handlers)`;
+    } else if (technologyStack.toLowerCase().includes('python')) {
+        codeExampleGuidance = `
+**CRITICAL - Code Examples**: Use Python for all code snippets. Include:
+- FastAPI or Flask patterns
+- Python best practices (type hints, context managers, decorators)
+- Pydantic models for data validation
+- Async/await patterns where appropriate`;
+    }
+    
     const systemPrompt = `You are an expert software architect creating a comprehensive Low-Level Design document. Follow software engineering best practices including SOLID principles, security standards (OWASP), RESTful API conventions, and observability best practices.
 
 Write detailed, production-ready content with:
 - Specific technical details, not generic statements
-- Code examples where appropriate
+- Code examples where appropriate (follow the technology stack specified below)
 - Architecture diagrams described in text (mermaid format when applicable)
 - Tables for API specifications and data models
 - Security considerations (authentication, authorization, encryption)
@@ -648,7 +559,8 @@ Write detailed, production-ready content with:
 - Infrastructure-specific guidance (AKS, APIM, SQL MI if mentioned)
 - Azure best practices when Azure services are used
 - Kubernetes deployment considerations when using AKS
-- API Management policies and patterns when using APIM`;
+- API Management policies and patterns when using APIM
+${codeExampleGuidance}`;
 
     const prompt = `Create the "${sectionTitle}" section for a Low-Level Design document.
 
@@ -673,210 +585,68 @@ async function createLLDDocument(
     sourceDoc: RequirementsDocument,
     outputFormat: OutputFormatConfig
 ): Promise<string> {
+    // Always generate markdown first (proper format for AI-generated content)
+    const markdownPath = await createMarkdownDocument(sections, sourceDoc);
+    
+    // Convert to other formats if requested
     if (outputFormat.format === 'docx') {
-        return await createDocxDocument(sections, sourceDoc, outputFormat);
+        return await convertMarkdownToDocx(markdownPath, sections, sourceDoc, outputFormat);
     } else if (outputFormat.format === 'html') {
         return await createHtmlDocument(sections, sourceDoc, outputFormat);
     } else {
-        return await createMarkdownDocument(sections, sourceDoc);
+        return markdownPath;
     }
 }
 
 /**
- * Create DOCX document (Microsoft Word format)
+ * Convert markdown to DOCX document (Microsoft Word format)
+ * Uses the proper markdown-to-DOCX converter that handles tables, code blocks, and complex formatting
  */
-async function createDocxDocument(
+async function convertMarkdownToDocx(
+    markdownPath: string,
     sections: LLDSection[],
     sourceDoc: RequirementsDocument,
     config: OutputFormatConfig
 ): Promise<string> {
-    // Create output path
-    const outputPath = path.join(
-        path.dirname(sourceDoc.filePath),
-        `LLD_${path.basename(sourceDoc.filePath, path.extname(sourceDoc.filePath))}_${Date.now()}.docx`
-    );
-    
-    // Build document paragraphs
-    const docParagraphs: Paragraph[] = [];
-    
-    // Cover page
-    if (config.includeCoverPage) {
-        docParagraphs.push(
-            new Paragraph({
-                text: "Low-Level Design Document",
-                heading: HeadingLevel.TITLE,
-                alignment: AlignmentType.CENTER,
-                spacing: { after: 400 }
-            }),
-            new Paragraph({
-                children: [
-                    new TextRun({
-                        text: `Generated from: ${path.basename(sourceDoc.filePath)}`,
-                        break: 1
-                    }),
-                    new TextRun({
-                        text: `Generated on: ${new Date().toLocaleString()}`,
-                        break: 1
-                    }),
-                    new TextRun({
-                        text: "Tool: DevEx Assistant - LLD Generator",
-                        break: 1
-                    })
-                ],
-                alignment: AlignmentType.CENTER,
-                spacing: { after: 400 }
-            }),
-            new Paragraph({
-                text: "",
-                pageBreakBefore: true
-            })
-        );
-    }
-    
-    // Table of contents placeholder
-    if (config.includeTableOfContents) {
-        docParagraphs.push(
-            new Paragraph({
-                text: "Table of Contents",
-                heading: HeadingLevel.HEADING_1,
-                spacing: { after: 200 }
-            }),
-            new Paragraph({
-                text: "(Right-click and select 'Update Field' to generate TOC in Word)",
-                spacing: { after: 400 }
-            }),
-            new Paragraph({
-                text: "",
-                pageBreakBefore: true
-            })
-        );
-    }
-    
-    // Add sections
-    for (const section of sections) {
-        // Parse the content to extract heading and body
-        const lines = section.content.split('\n');
-        let inCodeBlock = false;
-        
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'Converting LLD to DOCX...',
+        cancellable: false
+    }, async (progress) => {
+        try {
+            progress.report({ increment: 20, message: 'Reading markdown...' });
             
-            if (line.startsWith('```')) {
-                inCodeBlock = !inCodeBlock;
-                continue;
-            }
+            // Read the markdown content
+            const markdownContent = await fs.promises.readFile(markdownPath, 'utf-8');
             
-            if (line.startsWith('## ')) {
-                // Heading 1
-                docParagraphs.push(
-                    new Paragraph({
-                        text: line.replace('## ', ''),
-                        heading: HeadingLevel.HEADING_1,
-                        spacing: { before: 240, after: 120 }
-                    })
-                );
-            } else if (line.startsWith('### ')) {
-                // Heading 2
-                docParagraphs.push(
-                    new Paragraph({
-                        text: line.replace('### ', ''),
-                        heading: HeadingLevel.HEADING_2,
-                        spacing: { before: 200, after: 100 }
-                    })
-                );
-            } else if (line.startsWith('#### ')) {
-                // Heading 3
-                docParagraphs.push(
-                    new Paragraph({
-                        text: line.replace('#### ', ''),
-                        heading: HeadingLevel.HEADING_3,
-                        spacing: { before: 160, after: 80 }
-                    })
-                );
-            } else if (line.startsWith('- ') || line.startsWith('* ')) {
-                // Bullet point
-                docParagraphs.push(
-                    new Paragraph({
-                        text: line.replace(/^[*-]\s+/, ''),
-                        bullet: { level: 0 },
-                        spacing: { after: 100 }
-                    })
-                );
-            } else if (line.startsWith('1. ') || /^\d+\.\s/.test(line)) {
-                // Numbered list - keep as plain text to avoid numbering reference issues
-                docParagraphs.push(
-                    new Paragraph({
-                        text: line,
-                        spacing: { after: 100 }
-                    })
-                );
-            } else if (inCodeBlock) {
-                // Code block
-                docParagraphs.push(
-                    new Paragraph({
-                        children: [
-                            new TextRun({
-                                text: line,
-                                font: "Courier New",
-                                size: 20
-                            })
-                        ],
-                        spacing: { after: 50 }
-                    })
-                );
-            } else if (line.length > 0) {
-                // Regular paragraph
-                docParagraphs.push(
-                    new Paragraph({
-                        text: line,
-                        spacing: { after: 120 }
-                    })
-                );
-            } else {
-                // Empty line
-                docParagraphs.push(new Paragraph({ text: "" }));
-            }
-        }
-    }
-    
-    // Create document
-    const doc = new Document({
-        sections: [{
-            properties: {
-                page: {
-                    margin: {
-                        top: 1440,    // 1 inch
-                        right: 1440,
-                        bottom: 1440,
-                        left: 1440
-                    }
+            progress.report({ increment: 30, message: 'Converting to DOCX format...' });
+            
+            // Use the proper markdown-to-DOCX converter
+            await convertToDocx(markdownPath, markdownContent);
+            
+            progress.report({ increment: 50, message: 'Finalizing document...' });
+            
+            const docxPath = markdownPath.replace(/\.md$/i, '.docx');
+            
+            // Show success message with options
+            vscode.window.showInformationMessage(
+                `✅ LLD saved as DOCX: ${path.basename(docxPath)}`,
+                'Open File Location',
+                'Open in Word'
+            ).then(selection => {
+                if (selection === 'Open File Location') {
+                    vscode.env.openExternal(vscode.Uri.file(path.dirname(docxPath)));
+                } else if (selection === 'Open in Word') {
+                    vscode.env.openExternal(vscode.Uri.file(docxPath));
                 }
-            },
-            children: docParagraphs
-        }]
+            });
+            
+        } catch (error) {
+            throw new Error(`Failed to convert to DOCX: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
     });
     
-    // Generate and save DOCX file
-    try {
-        const buffer = await Packer.toBuffer(doc);
-        await fs.promises.writeFile(outputPath, buffer);
-        
-        vscode.window.showInformationMessage(
-            `LLD saved as DOCX: ${path.basename(outputPath)}`,
-            'Open File Location',
-            'Open in Word'
-        ).then(selection => {
-            if (selection === 'Open File Location') {
-                vscode.env.openExternal(vscode.Uri.file(path.dirname(outputPath)));
-            } else if (selection === 'Open in Word') {
-                vscode.env.openExternal(vscode.Uri.file(outputPath));
-            }
-        });
-        
-        return outputPath;
-    } catch (error) {
-        throw new Error(`Failed to create DOCX file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+    return markdownPath.replace(/\.md$/i, '.docx');
 }
 
 /**
@@ -928,7 +698,7 @@ async function createHtmlDocument(
 }
 
 /**
- * Create Markdown document
+ * Create Markdown document and save to file
  */
 async function createMarkdownDocument(
     sections: LLDSection[],
@@ -964,32 +734,46 @@ Not satisfied with a section? Have more details to add?
 
 `;
     
-    return header + body + footer;
+    const content = header + body + footer;
+    
+    // Create a short filename to avoid ENAMETOOLONG errors
+    // Truncate source filename if needed and add timestamp for uniqueness
+    const sourceBaseName = path.basename(sourceDoc.filePath, path.extname(sourceDoc.filePath));
+    const truncatedName = sourceBaseName.length > 50 ? sourceBaseName.substring(0, 50) : sourceBaseName;
+    const timestamp = Date.now();
+    const outputPath = path.join(
+        path.dirname(sourceDoc.filePath),
+        `LLD_${truncatedName}_${timestamp}.md`
+    );
+    
+    // Save markdown file
+    await fs.promises.writeFile(outputPath, content, 'utf-8');
+    
+    return outputPath;
 }
 
 /**
  * Open generated LLD document in editor
  */
-async function openGeneratedLLD(content: string, outputFormat: OutputFormatConfig): Promise<string> {
+async function openGeneratedLLD(filePath: string, outputFormat: OutputFormatConfig): Promise<string> {
     if (outputFormat.format === 'docx') {
-        // DOCX file is already saved and message shown in createDocxDocument
-        // Return the content as the file path (it's passed as file path for DOCX)
-        return content;
+        // DOCX file is already saved and opened by convertMarkdownToDocx
+        // Return the file path
+        return filePath;
     } else if (outputFormat.format === 'html') {
         // Create HTML file and open in browser
+        const htmlContent = await fs.promises.readFile(filePath, 'utf-8');
         const doc = await vscode.workspace.openTextDocument({
-            content: content,
+            content: htmlContent,
             language: 'html'
         });
         await vscode.window.showTextDocument(doc);
         return doc.uri.fsPath;
     } else {
-        // Open as markdown in VS Code
-        const doc = await vscode.workspace.openTextDocument({
-            content: content,
-            language: 'markdown'
-        });
+        // For markdown, open the saved file
+        const doc = await vscode.workspace.openTextDocument(filePath);
         await vscode.window.showTextDocument(doc);
+        vscode.window.showInformationMessage(`✅ LLD saved as Markdown: ${path.basename(filePath)}`);
         return doc.uri.fsPath;
     }
 }

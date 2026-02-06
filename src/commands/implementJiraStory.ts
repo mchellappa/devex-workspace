@@ -1,8 +1,21 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as Handlebars from 'handlebars';
 import { TelemetryService } from '../services/telemetryService';
 import { JiraService } from '../services/jiraService';
+import { TemplateProvider } from '../services/templateProvider';
+import { logger } from '../utils/logger';
+
+// Register Handlebars helpers
+Handlebars.registerHelper('camelCase', function(str: string) {
+    return str.charAt(0).toLowerCase() + str.slice(1);
+});
+
+Handlebars.registerHelper('pascalCase', function(str: string) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+});
+
 
 export async function implementJiraStory(
     context: vscode.ExtensionContext,
@@ -14,9 +27,9 @@ export async function implementJiraStory(
     try {
         // Step 1: Get Jira configuration
         const config = vscode.workspace.getConfiguration('devex');
-        const jiraBaseUrl = config.get<string>('jiraBaseUrl');
-        const jiraEmail = config.get<string>('jiraEmail');
-        const jiraApiToken = config.get<string>('jiraApiToken');
+        const jiraBaseUrl = config.get<string>('jira.baseUrl');
+        const jiraEmail = config.get<string>('jira.email');
+        const jiraApiToken = config.get<string>('jira.apiToken');
 
         if (!jiraBaseUrl || !jiraEmail || !jiraApiToken) {
             const configure = await vscode.window.showErrorMessage(
@@ -70,7 +83,58 @@ export async function implementJiraStory(
 
             progress.report({ increment: 10, message: 'Analyzing issue type...' });
 
-            // Step 4: Determine if it's a story or subtask
+            // Step 4: Create Git branch for the issue
+            try {
+                const gitExtension = vscode.extensions.getExtension('vscode.git')?.exports;
+                if (gitExtension) {
+                    const git = gitExtension.getAPI(1);
+                    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+                    
+                    if (workspaceFolder && git.repositories.length > 0) {
+                        const repo = git.repositories[0];
+                        
+                        // Create branch name from issue key and summary
+                        const sanitizedSummary = issue.summary
+                            .toLowerCase()
+                            .replace(/[^a-z0-9\s-]/g, '')
+                            .replace(/\s+/g, '-')
+                            .substring(0, 50);
+                        
+                        const branchName = `feature/${selectedIssueKey}-${sanitizedSummary}`;
+                        
+                        progress.report({ increment: 5, message: `Creating branch ${branchName}...` });
+                        
+                        // Check if branch already exists
+                        const branches = await repo.getBranches({ remote: false });
+                        const branchExists = branches.some((b: any) => b.name === branchName);
+                        
+                        if (!branchExists) {
+                            // Create and checkout new branch
+                            await repo.createBranch(branchName, true);
+                            vscode.window.showInformationMessage(`✅ Created and checked out branch: ${branchName}`);
+                        } else {
+                            // Branch exists, ask if user wants to checkout
+                            const checkout = await vscode.window.showWarningMessage(
+                                `Branch ${branchName} already exists. Checkout this branch?`,
+                                'Yes',
+                                'No'
+                            );
+                            
+                            if (checkout === 'Yes') {
+                                await repo.checkout(branchName);
+                                vscode.window.showInformationMessage(`✅ Checked out existing branch: ${branchName}`);
+                            }
+                        }
+                    }
+                }
+            } catch (gitError: any) {
+                // Don't fail the entire operation if Git branch creation fails
+                vscode.window.showWarningMessage(`Failed to create Git branch: ${gitError.message}`);
+            }
+
+            progress.report({ increment: 5, message: 'Analyzing issue type...' });
+
+            // Step 5: Determine if it's a story or subtask
             const isStory = issue.issueType === 'Story';
             const isSubtask = issue.issueType === 'Subtask' || issue.issueType === 'Sub-task';
 
@@ -126,17 +190,38 @@ export async function implementJiraStory(
 
             progress.report({ increment: 10, message: 'Detecting project structure...' });
 
-            // Step 5: Detect project type and structure
+            // Step 6: Detect project type and structure
             const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
             if (!workspaceFolder) {
                 throw new Error('No workspace folder found');
             }
 
             const projectInfo = await detectProjectStructure(workspaceFolder.uri.fsPath);
+            
+            // Warn if build file is missing
+            if (!projectInfo.hasBuildFile) {
+                const buildFileType = projectInfo.type === 'spring-boot' ? 'pom.xml or build.gradle' :
+                                     projectInfo.type === 'nodejs' ? 'package.json' :
+                                     projectInfo.type === 'python' ? 'requirements.txt' : 'build file';
+                                     
+                const proceed = await vscode.window.showWarningMessage(
+                    `⚠️ No ${buildFileType} detected. The implementation will include creating this file.\n\n` +
+                    `Project Type: ${projectInfo.type}\n` +
+                    `If this is a new project, the generated code will include all necessary setup files.\n\n` +
+                    `Do you want to proceed?`,
+                    'Proceed',
+                    'Cancel'
+                );
+                
+                if (proceed !== 'Proceed') {
+                    vscode.window.showInformationMessage('Implementation cancelled. Consider using "Generate Spring Boot Project" for a complete project setup.');
+                    return;
+                }
+            }
 
             progress.report({ increment: 10, message: 'Analyzing tasks...' });
 
-            // Step 6: Analyze tasks and generate implementation plan
+            // Step 7: Analyze tasks and generate implementation plan
             const implementationPlan = await generateImplementationPlan(
                 tasksToImplement,
                 projectInfo,
@@ -146,7 +231,7 @@ export async function implementJiraStory(
 
             progress.report({ increment: 10, message: 'Showing preview...' });
 
-            // Step 7: Show preview and get confirmation
+            // Step 8: Show preview and get confirmation
             const previewMessage = `📦 **Implementation Preview**\n\n**Story:** ${selectedIssueKey} - ${issue.summary}\n\n**Tasks:** ${tasksToImplement.length}\n\n**Will Generate:**\n${implementationPlan.files.map(f => `  • ${f.path}`).join('\n')}\n\n**Project Type:** ${projectInfo.type}\n**Base Package:** ${projectInfo.basePackage || 'N/A'}\n\nProceed with implementation?`;
 
             const confirmImplement = await vscode.window.showInformationMessage(
@@ -163,14 +248,16 @@ export async function implementJiraStory(
 
             progress.report({ increment: 20, message: 'Generating code...' });
 
-            // Step 8: Generate code files
+            // Step 9: Generate code files using TEMPLATES
             const generatedFiles: string[] = [];
+            const templateProvider = new TemplateProvider(context.extensionPath);
 
             for (const fileSpec of implementationPlan.files) {
-                const fileContent = await generateCodeFile(
+                const fileContent = await generateCodeFileFromTemplate(
                     fileSpec,
                     implementationPlan.context,
                     projectInfo,
+                    templateProvider,
                     progress
                 );
 
@@ -187,18 +274,55 @@ export async function implementJiraStory(
                 progress.report({ message: `Generated ${path.basename(fileSpec.path)}` });
             }
 
-            progress.report({ increment: 10, message: 'Updating Jira...' });
+            progress.report({ increment: 5, message: 'Committing to git...' });
 
-            // Step 9: Update Jira with progress
+            // Step 10: Git commit (no push - user needs to test first)
+            try {
+                const gitExtension = vscode.extensions.getExtension('vscode.git')?.exports;
+                if (gitExtension) {
+                    const git = gitExtension.getAPI(1);
+                    if (git.repositories.length > 0) {
+                        const repo = git.repositories[0];
+                        
+                        // Stage all generated files
+                        for (const filePath of generatedFiles) {
+                            const fullPath = path.join(workspaceFolder.uri.fsPath, filePath);
+                            try {
+                                await repo.add([fullPath]);
+                            } catch (addError) {
+                                logger.warn(`Could not stage ${filePath}: ${addError}`);
+                            }
+                        }
+                        
+                        // Commit
+                        const commitMessage = `${selectedIssueKey}: Generated implementation\n\nGenerated files:\n${generatedFiles.map(f => `- ${f}`).join('\n')}`;
+                        await repo.commit(commitMessage);
+                        
+                        vscode.window.showInformationMessage(`✅ Committed ${generatedFiles.length} files to git (not pushed yet - test first!)`);
+                    }
+                }
+            } catch (gitError: any) {
+                logger.warn(`Git commit failed: ${gitError.message}`);
+                vscode.window.showWarningMessage(`⚠️ Could not commit to git: ${gitError.message}`);
+            }
+
+            progress.report({ increment: 5, message: 'Updating Jira...' });
+
+            // Step 11: Update Jira with progress
             const comment = `**Implementation Started**\n\n**Generated Files:**\n${generatedFiles.map(f => `- ${f}`).join('\n')}\n\n_Generated by DevEx AI Assistant_`;
 
             await jiraService.addComment(selectedIssueKey!, comment);
 
-            // Try to transition to In Progress
+            // Try to transition to IN PROGRESS
+            // Note: transitionIssue has conversational error handling built-in
+            // It will prompt user to fill required fields in browser if needed
+            progress.report({ message: 'Transitioning to IN PROGRESS...' });
             try {
-                await jiraService.transitionIssue(selectedIssueKey!, 'In Progress');
-            } catch (transitionError) {
-                console.log('Could not transition issue (may already be in progress):', transitionError);
+                await jiraService.transitionIssue(selectedIssueKey!, 'IN PROGRESS');
+                vscode.window.showInformationMessage(`✅ ${selectedIssueKey} transitioned to IN PROGRESS`);
+            } catch (transitionError: any) {
+                // Only log - user already saw conversational error handling
+                console.log('Transition did not complete:', transitionError.message);
             }
 
             progress.report({ increment: 10, message: 'Complete!' });
@@ -211,7 +335,7 @@ export async function implementJiraStory(
                 projectType: projectInfo.type
             });
 
-            // Step 10: Show success and open first file
+            // Step 12: Show success and open first file
             vscode.window.showInformationMessage(
                 `✅ Generated ${generatedFiles.length} files for ${selectedIssueKey}`,
                 'Open Files'
@@ -237,6 +361,7 @@ interface ProjectInfo {
     basePackage?: string;
     srcPath: string;
     language: string;
+    hasBuildFile: boolean;
 }
 
 async function detectProjectStructure(workspacePath: string): Promise<ProjectInfo> {
@@ -260,7 +385,8 @@ async function detectProjectStructure(workspacePath: string): Promise<ProjectInf
             type: 'spring-boot',
             basePackage,
             srcPath: 'src/main/java',
-            language: 'java'
+            language: 'java',
+            hasBuildFile: true
         };
     }
 
@@ -271,7 +397,21 @@ async function detectProjectStructure(workspacePath: string): Promise<ProjectInf
             type: 'spring-boot',
             basePackage: 'com.company.app',
             srcPath: 'src/main/java',
-            language: 'java'
+            language: 'java',
+            hasBuildFile: true
+        };
+    }
+    
+    // Check for Java source files without build file (incomplete Spring Boot project)
+    const srcMainJava = path.join(workspacePath, 'src', 'main', 'java');
+    if (fs.existsSync(srcMainJava)) {
+        const basePackage = findBasePackage(srcMainJava) || 'com.company.app';
+        return {
+            type: 'spring-boot',
+            basePackage,
+            srcPath: 'src/main/java',
+            language: 'java',
+            hasBuildFile: false
         };
     }
 
@@ -280,7 +420,8 @@ async function detectProjectStructure(workspacePath: string): Promise<ProjectInf
         return {
             type: 'nodejs',
             srcPath: 'src',
-            language: 'typescript'
+            language: 'typescript',
+            hasBuildFile: true
         };
     }
 
@@ -290,7 +431,8 @@ async function detectProjectStructure(workspacePath: string): Promise<ProjectInf
         return {
             type: 'python',
             srcPath: 'src',
-            language: 'python'
+            language: 'python',
+            hasBuildFile: true
         };
     }
 
@@ -300,14 +442,16 @@ async function detectProjectStructure(workspacePath: string): Promise<ProjectInf
         return {
             type: 'dotnet',
             srcPath: '.',
-            language: 'csharp'
+            language: 'csharp',
+            hasBuildFile: true
         };
     }
 
     return {
         type: 'unknown',
         srcPath: 'src',
-        language: 'java'
+        language: 'java',
+        hasBuildFile: false
     };
 }
 
@@ -341,9 +485,10 @@ function findBasePackage(srcPath: string): string {
 
 interface FileSpec {
     path: string;
-    type: 'controller' | 'service' | 'repository' | 'entity' | 'dto' | 'config' | 'migration' | 'test';
+    type: 'controller' | 'service' | 'repository' | 'entity' | 'dto' | 'config' | 'migration' | 'test' | 'pom' | 'build' | 'dependencies' | 'application';
     name: string;
     description: string;
+    endpoints?: Array<{ method: string; path: string; operationId: string; summary: string }>;
 }
 
 interface ImplementationPlan {
@@ -368,11 +513,23 @@ async function generateImplementationPlan(
 
     const model = models[0];
 
+    // Determine build tool from project
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    const hasPomXml = workspaceFolder && fs.existsSync(path.join(workspaceFolder.uri.fsPath, 'pom.xml'));
+    const hasBuildGradle = workspaceFolder && (fs.existsSync(path.join(workspaceFolder.uri.fsPath, 'build.gradle')) || fs.existsSync(path.join(workspaceFolder.uri.fsPath, 'build.gradle.kts')));
+    const buildTool = hasPomXml ? 'Maven' : (hasBuildGradle ? 'Gradle' : 'Maven');
+
     const prompt = `You are a senior software engineer creating an implementation plan for Jira tasks.
 
 **Project Type:** ${projectInfo.type}
 **Language:** ${projectInfo.language}
 ${projectInfo.basePackage ? `**Base Package:** ${projectInfo.basePackage}` : ''}
+**Has Build File:** ${projectInfo.hasBuildFile}
+**Build Tool:** ${buildTool} (DO NOT CHANGE THIS - use ${buildTool === 'Maven' ? 'pom.xml' : 'build.gradle'} ONLY)
+
+
+
+${!projectInfo.hasBuildFile ? `⚠️ IMPORTANT: This project is MISSING its build file. Your implementation plan MUST include creating the build file as the FIRST file.` : ''}
 
 **LLD Context:**
 ${lldContext.substring(0, 2000)}
@@ -380,37 +537,42 @@ ${lldContext.substring(0, 2000)}
 **Tasks to Implement:**
 ${tasks.map(t => `- ${t.key}: ${t.summary}\n  ${t.description}`).join('\n\n')}
 
-Generate a comprehensive implementation plan with files to create.
+Generate a comprehensive implementation plan with ALL necessary files for a complete, compilable implementation.
 
 ${projectInfo.type === 'spring-boot' ? `
-For Spring Boot, generate:
-- Controller classes (REST endpoints with @RestController, @RequestMapping)
-- Service classes (@Service with business logic)
-- Repository interfaces (@Repository with Spring Data JPA)
-- Entity classes (@Entity with JPA annotations)
-- DTO classes for request/response
-- Configuration classes if needed (@Configuration)
-- Flyway migration SQL if database changes
-- Test classes (@SpringBootTest)
+For Spring Boot, MUST generate:
+${!projectInfo.hasBuildFile ? `1. **pom.xml** (CRITICAL - CREATE FIRST, NOT build.gradle) - Complete Spring Boot ${buildTool} project with:\n   - Spring Boot parent and dependencies (web, data-jpa, validation, test)\n   - Java version configuration\n   - Build plugins (spring-boot-maven-plugin)\n   - Group ID, artifact ID, version\n` : `1. ${buildTool === 'Maven' ? 'pom.xml' : 'build.gradle'} updates - ONLY if new dependencies are needed\n`}
+2. Application main class with @SpringBootApplication (if not exists)
+3. application.yml with database and server config (if not exists)
+4. Controller classes (REST endpoints with @RestController, @RequestMapping)
+5. Service classes (@Service with business logic)
+6. Repository interfaces (@Repository with Spring Data JPA)
+7. Entity classes (@Entity with JPA annotations)
+8. DTO classes for request/response
+9. Configuration classes if needed (@Configuration)
+10. Flyway migration SQL if database changes (V001__description.sql)
+11. Test classes (@SpringBootTest)
 ` : ''}
 
 ${projectInfo.type === 'nodejs' ? `
-For Node.js, generate:
-- Route handlers (Express routes)
-- Service classes (business logic)
-- Database models (Mongoose/TypeORM)
-- DTOs/interfaces (TypeScript types)
-- Middleware if needed
-- Test files (Jest/Mocha)
+For Node.js, MUST generate:
+1. package.json updates if new dependencies needed
+2. Route handlers (Express routes)
+3. Service classes (business logic)
+4. Database models (Mongoose/TypeORM)
+5. DTOs/interfaces (TypeScript types)
+6. Middleware if needed
+7. Test files (Jest/Mocha)
 ` : ''}
 
 ${projectInfo.type === 'python' ? `
-For Python, generate:
-- API routes (FastAPI/Flask)
-- Service modules (business logic)
-- Database models (SQLAlchemy/Pydantic)
-- Schemas (request/response models)
-- Test files (pytest)
+For Python, MUST generate:
+1. requirements.txt updates if new dependencies needed
+2. API routes (FastAPI/Flask)
+3. Service modules (business logic)
+4. Database models (SQLAlchemy/Pydantic)
+5. Schemas (request/response models)
+6. Test files (pytest)
 ` : ''}
 
 Format as JSON:
@@ -442,7 +604,126 @@ Format as JSON:
     return JSON.parse(jsonMatch[0]);
 }
 
-async function generateCodeFile(
+async function generateCodeFileFromTemplate(
+    fileSpec: FileSpec,
+    context: string,
+    projectInfo: ProjectInfo,
+    templateProvider: TemplateProvider,
+    progress: vscode.Progress<{ increment?: number; message?: string }>
+): Promise<string> {
+    logger.info(`Generating ${fileSpec.path} from template (type: ${fileSpec.type})`);
+
+    // For Spring Boot projects, use templates
+    if (projectInfo.type === 'spring-boot') {
+        return generateSpringBootFile(fileSpec, projectInfo, templateProvider);
+    }
+
+    // For other project types, fall back to AI with strict template requirements
+    return generateCodeFileWithAI(fileSpec, context, projectInfo, progress);
+}
+
+async function generateSpringBootFile(
+    fileSpec: FileSpec,
+    projectInfo: ProjectInfo,
+    templateProvider: TemplateProvider
+): Promise<string> {
+    const fileName = path.basename(fileSpec.path);
+    
+    // Determine which template to use based on file type
+    let templateName = '';
+    let templateData: any = {
+        packageName: projectInfo.basePackage,
+        className: fileSpec.name
+    };
+
+    switch (fileSpec.type) {
+        case 'controller':
+            templateName = 'Controller.java.template';
+            templateData.serviceName = fileSpec.name.replace('Controller', 'Service');
+            templateData.resourceName = fileSpec.name.replace('Controller', '').toLowerCase();
+            templateData.endpoints = fileSpec.endpoints || [];
+            break;
+
+        case 'service':
+            templateName = 'Service.java.template';
+            templateData.repositoryName = fileSpec.name.replace('Service', 'Repository');
+            templateData.resourceName = fileSpec.name.replace('Service', '').toLowerCase();
+            break;
+
+        case 'repository':
+            templateName = 'Repository.java.template';
+            templateData.entityName = fileSpec.name.replace('Repository', '');
+            templateData.resourceName = fileSpec.name.replace('Repository', '').toLowerCase();
+            break;
+
+        case 'pom':
+        case 'build':
+            if (fileName === 'pom.xml') {
+                templateName = 'pom.xml.template';
+                templateData = {
+                    groupId: projectInfo.basePackage?.split('.').slice(0, 2).join('.') || 'com.company',
+                    artifactId: fileSpec.name || 'app',
+                    version: '0.0.1-SNAPSHOT',
+                    name: fileSpec.name || 'Application',
+                    description: fileSpec.description || 'Spring Boot Application',
+                    javaVersion: '21',
+                    springBootVersion: '3.4.1'
+                };
+            } else if (fileName === 'build.gradle') {
+                templateName = 'build.gradle.template';
+            }
+            break;
+
+        case 'config':
+            if (fileName === 'application.yml' || fileName === 'application.yaml') {
+                templateName = 'application.yml.template';
+                templateData = {
+                    applicationName: fileSpec.name || 'application',
+                    port: 8080
+                };
+            } else if (fileName.includes('OpenApi') || fileName.includes('Swagger')) {
+                templateName = 'OpenApiConfig.java.template';
+            } else {
+                templateName = 'GlobalExceptionHandler.java.template';
+            }
+            break;
+
+        case 'application':
+            templateName = 'Application.java.template';
+            templateData.className = fileSpec.name || 'Application';
+            break;
+
+        case 'test':
+            templateName = 'ApplicationTests.java.template';
+            templateData.className = fileSpec.name || 'ApplicationTests';
+            break;
+
+        default:
+            logger.warn(`No template found for file type: ${fileSpec.type}, falling back to AI`);
+            // Fall back to AI for unknown types
+            return generateCodeFileWithAI(fileSpec, '', projectInfo, {
+                report: () => {}
+            } as any);
+    }
+
+    if (!templateName) {
+        throw new Error(`Unable to determine template for ${fileSpec.path}`);
+    }
+
+    try {
+        const template = await templateProvider.readSpringBootTemplate(templateName);
+        const compiled = Handlebars.compile(template);
+        const content = compiled(templateData);
+        
+        logger.info(`✓ Generated ${fileSpec.path} from ${templateName}`);
+        return content;
+    } catch (error: any) {
+        logger.error(`Failed to generate from template ${templateName}: ${error.message}`);
+        throw error;
+    }
+}
+
+async function generateCodeFileWithAI(
     fileSpec: FileSpec,
     context: string,
     projectInfo: ProjectInfo,
@@ -459,7 +740,7 @@ async function generateCodeFile(
 
     const model = models[0];
 
-    const prompt = `Generate production-ready ${projectInfo.language} code for this file.
+    const prompt = `Generate COMPLETE, production-ready ${projectInfo.language} code for this file that will compile/run without errors.
 
 **Context:** ${context}
 
@@ -471,19 +752,40 @@ async function generateCodeFile(
 **Project Type:** ${projectInfo.type}
 ${projectInfo.basePackage ? `**Package:** ${projectInfo.basePackage}` : ''}
 
-Requirements:
-- Follow ${projectInfo.language} best practices and conventions
-- Include proper imports
+CRITICAL Requirements:
+- Generate COMPLETE, COMPILABLE code - no placeholders or "..."
+- Include ALL necessary imports (fully qualified)
+- Include package declaration (for Java)
 - Add comprehensive documentation (JavaDoc/JSDoc/docstrings)
-- Include error handling
-- Add TODO comments for business logic that needs customization
-- Follow SOLID principles
-${projectInfo.type === 'spring-boot' ? '- Use Spring Boot annotations (@RestController, @Service, @Repository, @Entity)' : ''}
-${projectInfo.type === 'spring-boot' ? '- Include validation annotations (@Valid, @NotNull, etc.)' : ''}
-${fileSpec.type === 'test' ? '- Include sample test cases with given-when-then structure' : ''}
-${fileSpec.type === 'migration' ? '- Use Flyway naming convention (V001__description.sql)' : ''}
+- Include proper error handling and validation
+- Add TODO comments ONLY for business-specific logic that requires domain knowledge
+- Follow SOLID principles and ${projectInfo.language} best practices
+${projectInfo.type === 'spring-boot' ? '- Use proper Spring Boot annotations (@RestController, @Service, @Repository, @Entity, @Autowired)' : ''}
+${projectInfo.type === 'spring-boot' ? '- Include validation annotations (@Valid, @NotNull, @NotEmpty, @Size, etc.)' : ''}
+${projectInfo.type === 'spring-boot' ? '- Use proper Spring Data JPA for repositories (extends JpaRepository)' : ''}
+${fileSpec.type === 'test' ? '- Include COMPLETE test cases with given-when-then structure, assertions, and test setup' : ''}
+${fileSpec.type === 'migration' ? '- Use Flyway naming convention (V###__description.sql) with proper SQL DDL' : ''}
+${fileSpec.type === 'pom' || fileSpec.name === 'pom.xml' ? `
+⚠️ CRITICAL for pom.xml:
+1. MUST use Spring Boot parent POM:
+   <parent>
+       <groupId>org.springframework.boot</groupId>
+       <artifactId>spring-boot-starter-parent</artifactId>
+       <version>3.4.1</version>
+   </parent>
+2. DO NOT specify versions for Spring Boot managed dependencies:
+   - spring-boot-starter-web (NO version)
+   - spring-boot-starter-data-jpa (NO version)
+   - spring-boot-starter-validation (NO version)
+   - spring-boot-starter-test (NO version)
+   - spring-boot-starter-actuator (NO version)
+   - h2database (NO version)
+3. Spring Boot parent manages ALL dependency versions automatically
+4. Plugin section: spring-boot-maven-plugin (NO version needed)
+5. Use properties for non-Spring dependencies: springdoc.version, lombok.version, mapstruct.version
+` : ''}
 
-Generate ONLY the code, no explanations or markdown.`;
+Generate ONLY the code with NO markdown fences, NO explanations, NO placeholders.`;
 
     const messages = [vscode.LanguageModelChatMessage.User(prompt)];
     const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);

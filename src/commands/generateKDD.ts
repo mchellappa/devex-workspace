@@ -18,8 +18,10 @@ interface KDDContext {
     };
     constraints?: string[];
     assumptions?: string[];
+    concerns?: string[]; // NEW: Track concerns from user feedback
     options: DesignOption[];
     selectedOption?: number;
+    aiRecommendedOption?: number; // NEW: Track AI recommendation
     justification?: string;
 }
 
@@ -356,33 +358,47 @@ Format your response as JSON:
 }
 
 async function evaluateOptions(kddContext: KDDContext): Promise<void> {
+    // Step 1: Get AI recommendation first (automatically)
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'Analyzing options and generating AI recommendation...',
+        cancellable: false
+    }, async () => {
+        await generateAIRecommendation(kddContext);
+    });
+
+    // Step 2: Show comparison table with AI recommendation
     const panel = vscode.window.createWebviewPanel(
         'kddEvaluate',
-        'Evaluate Design Options',
+        'Design Options Comparison',
         vscode.ViewColumn.One,
         { enableScripts: true }
     );
 
-    panel.webview.html = getEvaluationWebview(kddContext.options);
+    panel.webview.html = getEvaluationWebview(kddContext);
 
     return new Promise((resolve) => {
         panel.webview.onDidReceiveMessage(
             async (message) => {
                 switch (message.command) {
-                    case 'submitEvaluation':
-                        // Update options with scores
-                        message.data.scores.forEach((score: any, index: number) => {
-                            kddContext.options[index].scores = score;
-                        });
-                        
+                    case 'confirmSelection':
                         kddContext.selectedOption = message.data.selectedOption;
                         kddContext.justification = message.data.justification;
-                        
                         panel.dispose();
+                        
+                        // Ask for concerns/clarifications if user changed from AI recommendation
+                        if (kddContext.selectedOption !== kddContext.aiRecommendedOption) {
+                            await gatherConcerns(kddContext, 'You selected a different option than AI recommended.');
+                        }
+                        
                         resolve();
                         break;
-                    case 'getAIRecommendation':
-                        await getAIRecommendation(kddContext, panel);
+                    case 'needClarification':
+                        panel.dispose();
+                        await gatherConcerns(kddContext, 'Let\'s clarify your concerns about the options.');
+                        // Show panel again after clarification
+                        await evaluateOptions(kddContext);
+                        resolve();
                         break;
                 }
             }
@@ -390,13 +406,8 @@ async function evaluateOptions(kddContext: KDDContext): Promise<void> {
     });
 }
 
-async function getAIRecommendation(kddContext: KDDContext, panel: vscode.WebviewPanel): Promise<void> {
-    await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: 'Getting AI recommendation...',
-        cancellable: false
-    }, async () => {
-        try {
+async function generateAIRecommendation(kddContext: KDDContext): Promise<void> {
+    try {
             const models = await vscode.lm.selectChatModels({
                 vendor: 'copilot',
                 family: 'gpt-4o'
@@ -469,22 +480,65 @@ Format your response as JSON:
                 fullResponse += fragment;
             }
 
-            const jsonMatch = fullResponse.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                const recommendation = JSON.parse(jsonMatch[0]);
-                
-                // Send recommendation back to webview
-                panel.webview.postMessage({
-                    command: 'aiRecommendation',
-                    data: recommendation
-                });
-            }
-
-        } catch (error) {
-            console.error('Error getting AI recommendation:', error);
-            vscode.window.showErrorMessage(`Failed to get AI recommendation: ${error}`);
+        const jsonMatch = fullResponse.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const recommendation = JSON.parse(jsonMatch[0]);
+            
+            // Store AI recommendation and scores in context
+            kddContext.aiRecommendedOption = recommendation.recommendedOption - 1; // Convert to 0-based index
+            kddContext.justification = recommendation.justification;
+            
+            // Update options with AI-generated scores
+            recommendation.scores.forEach((score: any, index: number) => {
+                kddContext.options[index].scores = score;
+            });
         }
+
+    } catch (error) {
+        console.error('Error generating AI recommendation:', error);
+        vscode.window.showWarningMessage(`Failed to generate AI recommendation: ${error}. Proceeding with manual selection.`);
+    }
+}
+
+/**
+ * Gather concerns or clarifying questions from user
+ */
+async function gatherConcerns(kddContext: KDDContext, reason: string): Promise<void> {
+    vscode.window.showInformationMessage(reason);
+
+    const concernsInput = await vscode.window.showInputBox({
+        prompt: 'Do you have any concerns or questions about the options? (Optional)',
+        placeHolder: 'e.g., Worried about implementation complexity, Need to consider budget constraints',
+        ignoreFocusOut: true
     });
+
+    if (concernsInput && concernsInput.trim()) {
+        if (!kddContext.concerns) {
+            kddContext.concerns = [];
+        }
+        kddContext.concerns.push(concernsInput.trim());
+    }
+
+    // Ask if they want to add assumptions
+    const addAssumptions = await vscode.window.showQuickPick(['Yes', 'No'], {
+        placeHolder: 'Would you like to add any new assumptions based on your concerns?'
+    });
+
+    if (addAssumptions === 'Yes') {
+        const assumptionsInput = await vscode.window.showInputBox({
+            prompt: 'Enter new assumptions (one per line)',
+            placeHolder: 'e.g., Team has expertise in Node.js\nBudget allows for cloud infrastructure',
+            ignoreFocusOut: true
+        });
+
+        if (assumptionsInput && assumptionsInput.trim()) {
+            const newAssumptions = assumptionsInput.split('\n').filter(a => a.trim());
+            if (!kddContext.assumptions) {
+                kddContext.assumptions = [];
+            }
+            kddContext.assumptions.push(...newAssumptions);
+        }
+    }
 }
 
 async function enrichSelectedOption(kddContext: KDDContext): Promise<void> {
@@ -650,6 +704,20 @@ async function generateKDDDocument(kddContext: KDDContext): Promise<void> {
         kddContext.constraints?.map(c => `- ${c}`).join('\n') || 'Not provided');
     template = template.replace('{ASSUMPTIONS}', 
         kddContext.assumptions?.map(a => `- ${a}`).join('\n') || 'Not provided');
+
+    // Add concerns section if available
+    if (kddContext.concerns && kddContext.concerns.length > 0) {
+        const concernsSection = `\n\n### Concerns & Clarifications\n\nThe following concerns were raised during option evaluation:\n\n${kddContext.concerns.map(c => `- ${c}`).join('\n')}\n`;
+        // Insert concerns after assumptions
+        const assumptionsIndex = template.indexOf('{ASSUMPTIONS}');
+        if (assumptionsIndex !== -1) {
+            // Find the end of assumptions section (next ## heading or end of section)
+            const nextSectionIndex = template.indexOf('\n##', assumptionsIndex + 100);
+            if (nextSectionIndex !== -1) {
+                template = template.slice(0, nextSectionIndex) + concernsSection + template.slice(nextSectionIndex);
+            }
+        }
+    }
 
     // Design Options
     kddContext.options.forEach((option, i) => {
@@ -1033,31 +1101,98 @@ function getRefineOptionsWebview(options: DesignOption[]): string {
 </html>`;
 }
 
-function getEvaluationWebview(options: DesignOption[]): string {
-    const optionsHtml = options.map((opt, i) => `
-        <div class="option-card">
-            <h3>${opt.title}</h3>
+function getEvaluationWebview(kddContext: KDDContext): string {
+    const options = kddContext.options;
+    const aiRecommended = kddContext.aiRecommendedOption ?? 0;
+
+    // Helper to render score bars
+    const renderScore = (score: number | undefined, invertColors: boolean = false): string => {
+        if (!score) {return 'N/A';}
+        const percentage = (score / 10) * 100;
+        const colorPosition = invertColors ? 100 - percentage : percentage;
+        return `
+            <div style="display: flex; align-items: center; justify-content: center;">
+                <div class="score-bar">
+                    <div class="score-fill" style="width: ${percentage}%; background: hsl(${colorPosition * 1.2}, 80%, 50%);"></div>
+                </div>
+                <span>${score}/10</span>
+            </div>
+        `;
+    };
+
+    // Build comparison table HTML
+    const metricsTableHtml = `
+        <table class="comparison-table">
+            <thead>
+                <tr>
+                    <th>Criteria</th>
+                    ${options.map((opt, i) => `
+                        <th class="${i === aiRecommended ? 'recommended-col' : ''}">
+                            ${opt.title}
+                            ${i === aiRecommended ? '<br><span class="badge">🤖 AI Recommended</span>' : ''}
+                        </th>
+                    `).join('')}
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Performance</strong></td>
+                    ${options.map((opt, i) => `<td class="${i === aiRecommended ? 'recommended-col' : ''}">${renderScore(opt.scores?.performance)}</td>`).join('')}
+                </tr>
+                <tr>
+                    <td><strong>Scalability</strong></td>
+                    ${options.map((opt, i) => `<td class="${i === aiRecommended ? 'recommended-col' : ''}">${renderScore(opt.scores?.scalability)}</td>`).join('')}
+                </tr>
+                <tr>
+                    <td><strong>Cost Efficiency</strong></td>
+                    ${options.map((opt, i) => `<td class="${i === aiRecommended ? 'recommended-col' : ''}">${renderScore(opt.scores?.cost)}</td>`).join('')}
+                </tr>
+                <tr>
+                    <td><strong>Complexity</strong> <span style="font-size:10px">(lower better)</span></td>
+                    ${options.map((opt, i) => `<td class="${i === aiRecommended ? 'recommended-col' : ''}">${renderScore(opt.scores?.complexity, true)}</td>`).join('')}
+                </tr>
+                <tr>
+                    <td><strong>Time to Market</strong></td>
+                    ${options.map((opt, i) => `<td class="${i === aiRecommended ? 'recommended-col' : ''}">${renderScore(opt.scores?.timeToMarket)}</td>`).join('')}
+                </tr>
+                <tr class="total-row">
+                    <td><strong>Weighted Total</strong></td>
+                    ${options.map((opt, i) => {
+                        const total = opt.scores ? (
+                            opt.scores.performance * 0.25 +
+                            opt.scores.scalability * 0.20 +
+                            opt.scores.cost * 0.20 +
+                            (11 - opt.scores.complexity) * 0.15 + // Invert complexity
+                            opt.scores.timeToMarket * 0.20
+                        ).toFixed(1) : 'N/A';
+                        return `<td class="${i === aiRecommended ? 'recommended-col' : ''}"><strong>${total}</strong></td>`;
+                    }).join('')}
+                </tr>
+                <tr>
+                    <td><strong>Effort Estimate</strong></td>
+                    ${options.map((opt, i) => `<td class="${i === aiRecommended ? 'recommended-col' : ''}">${opt.effortEstimate || 'TBD'}</td>`).join('')}
+                </tr>
+            </tbody>
+        </table>
+    `;
+
+    // Build options detail HTML
+    const optionsDetailHtml = options.map((opt, i) => `
+        <div class="option-detail ${i === aiRecommended ? 'recommended' : ''}">
+            <h3>${i + 1}. ${opt.title} ${i === aiRecommended ? '⭐' : ''}</h3>
             <p>${opt.description}</p>
-            <div class="scores">
-                <div class="score-item">
-                    <label>Performance (1-10)</label>
-                    <input type="number" id="perf-${i}" min="1" max="10" value="5">
+            <div class="pros-cons">
+                <div class="pros">
+                    <h4>✅ Pros</h4>
+                    <ul>
+                        ${opt.pros.map(p => `<li>${p}</li>`).join('')}
+                    </ul>
                 </div>
-                <div class="score-item">
-                    <label>Scalability (1-10)</label>
-                    <input type="number" id="scale-${i}" min="1" max="10" value="5">
-                </div>
-                <div class="score-item">
-                    <label>Cost (1-10)</label>
-                    <input type="number" id="cost-${i}" min="1" max="10" value="5">
-                </div>
-                <div class="score-item">
-                    <label>Complexity (1-10, lower is better)</label>
-                    <input type="number" id="complex-${i}" min="1" max="10" value="5">
-                </div>
-                <div class="score-item">
-                    <label>Time to Market (1-10)</label>
-                    <input type="number" id="ttm-${i}" min="1" max="10" value="5">
+                <div class="cons">
+                    <h4>⚠️ Cons</h4>
+                    <ul>
+                        ${opt.cons.map(c => `<li>${c}</li>`).join('')}
+                    </ul>
                 </div>
             </div>
         </div>
@@ -1068,157 +1203,226 @@ function getEvaluationWebview(options: DesignOption[]): string {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Evaluate Design Options</title>
+    <title>Design Options Comparison</title>
     <style>
         body {
             font-family: var(--vscode-font-family);
             padding: 20px;
             color: var(--vscode-foreground);
             background-color: var(--vscode-editor-background);
+            max-width: 1400px;
+            margin: 0 auto;
         }
         h2 {
             color: var(--vscode-titleBar-activeForeground);
             border-bottom: 2px solid var(--vscode-titleBar-activeBackground);
             padding-bottom: 10px;
+            margin-bottom: 20px;
         }
-        .option-card {
+        .ai-recommendation {
+            background: linear-gradient(135deg, var(--vscode-textBlockQuote-background) 0%, var(--vscode-editor-inactiveSelectionBackground) 100%);
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid var(--vscode-textLink-foreground);
+            margin-bottom: 30px;
+        }
+        .ai-recommendation h3 {
+            margin-top: 0;
+            color: var(--vscode-textLink-foreground);
+        }
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            background-color: var(--vscode-editor-background);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .comparison-table th, .comparison-table td {
+            padding: 12px 15px;
+            text-align: center;
+            border: 1px solid var(--vscode-panel-border);
+        }
+        .comparison-table th {
             background-color: var(--vscode-editor-inactiveSelectionBackground);
-            padding: 15px;
+            font-weight: bold;
+        }
+        .comparison-table th:first-child, .comparison-table td:first-child {
+            text-align: left;
+            font-weight: 500;
+        }
+        .recommended-col {
+            background-color: var(--vscode-textBlockQuote-background) !important;
+        }
+        .total-row {
+            background-color: var(--vscode-editor-inactiveSelectionBackground);
+            font-size: 1.1em;
+        }
+        .badge {
+            display: inline-block;
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .score-bar {
+            display: inline-block;
+            width: 100px;
+            height: 20px;
+            background-color: var(--vscode-input-background);
+            border-radius: 10px;
+            overflow: hidden;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        .score-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4444 0%, #ffaa00 50%, #44ff44 100%);
+            transition: width 0.3s;
+        }
+        .option-detail {
+            background-color: var(--vscode-editor-inactiveSelectionBackground);
+            padding: 20px;
             border-radius: 8px;
             margin-bottom: 20px;
         }
-        .scores {
+        .option-detail.recommended {
+            border: 2px solid var(--vscode-textLink-foreground);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .pros-cons {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 10px;
-            margin-top: 10px;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 15px;
         }
-        .score-item {
-            display: flex;
-            flex-direction: column;
+        .pros h4, .cons h4 {
+            margin-top: 0;
         }
-        label {
-            font-size: 12px;
-            margin-bottom: 5px;
+        .pros ul, .cons ul {
+            padding-left: 20px;
         }
-        input[type="number"] {
-            padding: 8px;
+        .selection-area {
             background-color: var(--vscode-input-background);
-            color: var(--vscode-input-foreground);
-            border: 1px solid var(--vscode-input-border);
-            border-radius: 4px;
-        }
-        button {
-            background-color: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: none;
-            padding: 10px 20px;
-            cursor: pointer;
-            border-radius: 4px;
-            font-size: 14px;
-            margin-right: 10px;
-        }
-        button:hover {
-            background-color: var(--vscode-button-hoverBackground);
-        }
-        .recommendation {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: var(--vscode-textBlockQuote-background);
-            border-left: 4px solid var(--vscode-textLink-foreground);
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 30px;
         }
         select, textarea {
             width: 100%;
-            padding: 8px;
+            padding: 10px;
             background-color: var(--vscode-input-background);
             color: var(--vscode-input-foreground);
             border: 1px solid var(--vscode-input-border);
             border-radius: 4px;
             margin-top: 10px;
+            font-family: var(--vscode-font-family);
         }
         textarea {
             min-height: 100px;
             resize: vertical;
         }
+        button {
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: none;
+            padding: 12px 24px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-right: 10px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: var(--vscode-button-hoverBackground);
+        }
+        button.secondary {
+            background-color: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+        }
     </style>
 </head>
 <body>
-    <h2>📊 Evaluate Design Options</h2>
-    <p>Score each option on key criteria (1-10, where 10 is best)</p>
-    
-    <button onclick="getAIRecommendation()">🤖 Get AI Recommendation</button>
-    
-    <div id="recommendation" style="display:none;" class="recommendation">
-        <h3>AI Recommendation</h3>
-        <p id="recommendationText"></p>
+    <h2>📊 Design Options Comparison & Recommendation</h2>
+
+    <div class="ai-recommendation">
+        <h3>🤖 AI Analysis & Recommendation</h3>
+        <p><strong>Recommended Option:</strong> Option ${aiRecommended + 1} - ${options[aiRecommended].title}</p>
+        <p>${kddContext.justification || 'AI recommendation generated based on comprehensive analysis of all factors.'}</p>
     </div>
+
+    <h3>Metrics Comparison Table</h3>
+    <p><em>Scores are rated 1-10 (higher is better, except Complexity where lower is better)</em></p>
     
-    ${optionsHtml}
+    ${metricsTableHtml}
 
-    <h3>Final Decision</h3>
-    <label>Select Recommended Option</label>
-    <select id="selectedOption">
-        ${options.map((opt, i) => `<option value="${i}">${opt.title}</option>`).join('')}
-    </select>
+    <h3>Detailed Option Analysis</h3>
+    ${optionsDetailHtml}
 
-    <label>Justification</label>
-    <textarea id="justification" placeholder="Explain why this option was selected..."></textarea>
+    <div class="selection-area">
+        <h3>Your Decision</h3>
+        <p><strong>Do you agree with the AI recommendation?</strong></p>
+        
+        <label><strong>Select Your Preferred Option:</strong></label>
+        <select id="selectedOption">
+            ${options.map((opt, i) => `
+                <option value="${i}" ${i === aiRecommended ? 'selected' : ''}>
+                    Option ${i + 1}: ${opt.title} ${i === aiRecommended ? '(AI Recommended)' : ''}
+                </option>
+            `).join('')}
+        </select>
 
-    <br><br>
-    <button onclick="submitEvaluation()">Generate KDD Document</button>
+        <label><strong>Justification for Your Choice:</strong></label>
+        <textarea id="justification" placeholder="Explain why you selected this option...">${kddContext.justification || ''}</textarea>
+
+        <br>
+        <button onclick="confirmSelection()">✅ Confirm Selection & Generate KDD</button>
+        <button class="secondary" onclick="needClarification()">❓ I Have Concerns / Questions</button>
+    </div>
 
     <script>
         const vscode = acquireVsCodeApi();
 
-        function getAIRecommendation() {
-            vscode.postMessage({
-                command: 'getAIRecommendation'
-            });
-        }
+        function confirmSelection() {
+            const selectedOption = parseInt(document.getElementById('selectedOption').value);
+            const justification = document.getElementById('justification').value;
 
-        function submitEvaluation() {
-            const scores = [];
-            for (let i = 0; i < ${options.length}; i++) {
-                scores.push({
-                    performance: parseInt(document.getElementById('perf-' + i).value),
-                    scalability: parseInt(document.getElementById('scale-' + i).value),
-                    cost: parseInt(document.getElementById('cost-' + i).value),
-                    complexity: parseInt(document.getElementById('complex-' + i).value),
-                    timeToMarket: parseInt(document.getElementById('ttm-' + i).value)
-                });
+            if (!justification.trim()) {
+                alert('Please provide a justification for your selection.');
+                return;
             }
 
             vscode.postMessage({
-                command: 'submitEvaluation',
+                command: 'confirmSelection',
                 data: {
-                    scores,
-                    selectedOption: parseInt(document.getElementById('selectedOption').value),
-                    justification: document.getElementById('justification').value
+                    selectedOption,
+                    justification
                 }
             });
         }
 
-        window.addEventListener('message', event => {
-            const message = event.data;
-            if (message.command === 'aiRecommendation') {
-                const rec = message.data;
-                document.getElementById('recommendation').style.display = 'block';
-                document.getElementById('recommendationText').innerHTML = 
-                    '<strong>Recommended: Option ' + rec.recommendedOption + '</strong><br><br>' + 
-                    rec.justification;
-                document.getElementById('selectedOption').value = rec.recommendedOption - 1;
-                document.getElementById('justification').value = rec.justification;
-                
-                // Update scores
-                rec.scores.forEach((score, i) => {
-                    document.getElementById('perf-' + i).value = score.performance;
-                    document.getElementById('scale-' + i).value = score.scalability;
-                    document.getElementById('cost-' + i).value = score.cost;
-                    document.getElementById('complex-' + i).value = score.complexity;
-                    document.getElementById('ttm-' + i).value = score.timeToMarket;
-                });
-            }
-        });
+        function needClarification() {
+            vscode.postMessage({
+                command: 'needClarification'
+            });
+        }
+    </script>
+    <script>
+        // Helper function to render score
+        function renderScore(score, invertColors = false) {
+            if (!score) return 'N/A';
+            const percentage = (score / 10) * 100;
+            const colorPosition = invertColors ? 100 - percentage : percentage;
+            return \`
+                <div style="display: flex; align-items: center; justify-content: center;">
+                    <div class="score-bar">
+                        <div class="score-fill" style="width: \${percentage}%; background: hsl(\${colorPosition * 1.2}, 80%, 50%);"></div>
+                    </div>
+                    <span>\${score}/10</span>
+                </div>
+            \`;
+        }
     </script>
 </body>
 </html>`;

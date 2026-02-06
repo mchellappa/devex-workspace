@@ -91,7 +91,7 @@ export async function convertMarkdownCommand(
     }
 }
 
-async function convertToDocx(markdownPath: string, markdownContent: string): Promise<void> {
+export async function convertToDocx(markdownPath: string, markdownContent: string): Promise<void> {
     await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: 'Converting markdown to DOCX...',

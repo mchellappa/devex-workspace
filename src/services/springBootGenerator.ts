@@ -67,38 +67,58 @@ export class SpringBootGenerator {
     async generateProject(config: SpringBootProjectConfig, openApiEndpoints: OpenAPIEndpoint[]): Promise<void> {
         const projectPath = path.join(config.targetDirectory, config.projectName);
 
-        // Create project directory structure
-        await this.createDirectoryStructure(projectPath, config.packageName);
+        try {
+            logger.info(`Starting Spring Boot project generation at: ${projectPath}`);
 
-        // Generate build file (pom.xml or build.gradle)
-        await this.generateBuildFile(projectPath, config);
+            // Create project directory structure
+            logger.info('Creating directory structure...');
+            await this.createDirectoryStructure(projectPath, config.packageName);
 
-        // Generate application files
-        await this.generateApplicationClass(projectPath, config);
-        await this.generateApplicationYaml(projectPath, config);
+            // Generate build file (pom.xml or build.gradle)
+            logger.info('Generating build file...');
+            await this.generateBuildFile(projectPath, config);
 
-        // Generate controllers, services, repositories from OpenAPI
-        await this.generateControllersFromOpenAPI(projectPath, config, openApiEndpoints);
+            // Generate application files
+            logger.info('Generating application class...');
+            await this.generateApplicationClass(projectPath, config);
+            
+            logger.info('Generating application.yml...');
+            await this.generateApplicationYaml(projectPath, config);
 
-        // Generate configuration classes
-        await this.generateConfigurationClasses(projectPath, config);
+            // Generate controllers, services, repositories from OpenAPI
+            logger.info('Generating controllers, services, and repositories...');
+            await this.generateControllersFromOpenAPI(projectPath, config, openApiEndpoints);
 
-        // Generate exception handler
-        await this.generateExceptionHandler(projectPath, config);
+            // Generate configuration classes
+            logger.info('Generating configuration classes...');
+            await this.generateConfigurationClasses(projectPath, config);
 
-        // Generate test files
-        await this.generateTestScaffolding(projectPath, config);
+            // Generate exception handler
+            logger.info('Generating exception handler...');
+            await this.generateExceptionHandler(projectPath, config);
 
-        // Generate README
-        await this.generateReadme(projectPath, config);
+            // Generate test files
+            logger.info('Generating test scaffolding...');
+            await this.generateTestScaffolding(projectPath, config);
 
-        // Generate .gitignore
-        await this.generateGitignore(projectPath);
+            // Generate README
+            logger.info('Generating README...');
+            await this.generateReadme(projectPath, config);
 
-        // Copy deployment templates
-        await this.templateProvider.copyDeploymentTemplates(projectPath);
+            // Generate .gitignore
+            logger.info('Generating .gitignore...');
+            await this.generateGitignore(projectPath);
 
-        logger.info(`Spring Boot project generated successfully at: ${projectPath}`);
+            // Copy deployment templates
+            logger.info('Copying deployment templates...');
+            await this.templateProvider.copyDeploymentTemplates(projectPath);
+
+            logger.info(`Spring Boot project generated successfully at: ${projectPath}`);
+            
+        } catch (error: any) {
+            logger.error(`Failed to generate Spring Boot project: ${error.message}`, error);
+            throw new Error(`Project generation failed: ${error.message}`);
+        }
     }
 
     private async createDirectoryStructure(projectPath: string, packageName: string): Promise<void> {
@@ -124,30 +144,50 @@ export class SpringBootGenerator {
     }
 
     private async generateBuildFile(projectPath: string, config: SpringBootProjectConfig): Promise<void> {
-        if (config.buildTool === 'maven') {
-            const template = await this.templateProvider.readSpringBootTemplate('pom.xml.template');
-            const compiled = Handlebars.compile(template);
-            const content = compiled({
-                groupId: config.groupId,
-                artifactId: config.artifactId,
-                version: '0.0.1-SNAPSHOT',
-                springBootVersion: config.springBootVersion,
-                javaVersion: config.javaVersion,
-                projectName: config.projectName
-            });
-            await fs.promises.writeFile(path.join(projectPath, 'pom.xml'), content, 'utf-8');
-        } else {
-            // Gradle build file
-            const template = await this.templateProvider.readSpringBootTemplate('build.gradle.template');
-            const compiled = Handlebars.compile(template);
-            const content = compiled({
-                groupId: config.groupId,
-                version: '0.0.1-SNAPSHOT',
-                springBootVersion: config.springBootVersion,
-                javaVersion: config.javaVersion,
-                projectName: config.projectName
-            });
-            await fs.promises.writeFile(path.join(projectPath, 'build.gradle'), content, 'utf-8');
+        try {
+            if (config.buildTool === 'maven') {
+                logger.info('Reading pom.xml template...');
+                const template = await this.templateProvider.readSpringBootTemplate('pom.xml.template');
+                
+                logger.info('Compiling pom.xml template...');
+                const compiled = Handlebars.compile(template);
+                const content = compiled({
+                    groupId: config.groupId,
+                    artifactId: config.artifactId,
+                    version: '0.0.1-SNAPSHOT',
+                    springBootVersion: config.springBootVersion,
+                    javaVersion: config.javaVersion,
+                    projectName: config.projectName
+                });
+                
+                const pomPath = path.join(projectPath, 'pom.xml');
+                logger.info(`Writing pom.xml to: ${pomPath}`);
+                await fs.promises.writeFile(pomPath, content, 'utf-8');
+                logger.info('pom.xml written successfully');
+                
+            } else {
+                // Gradle build file
+                logger.info('Reading build.gradle template...');
+                const template = await this.templateProvider.readSpringBootTemplate('build.gradle.template');
+                
+                logger.info('Compiling build.gradle template...');
+                const compiled = Handlebars.compile(template);
+                const content = compiled({
+                    groupId: config.groupId,
+                    version: '0.0.1-SNAPSHOT',
+                    springBootVersion: config.springBootVersion,
+                    javaVersion: config.javaVersion,
+                    projectName: config.projectName
+                });
+                
+                const gradlePath = path.join(projectPath, 'build.gradle');
+                logger.info(`Writing build.gradle to: ${gradlePath}`);
+                await fs.promises.writeFile(gradlePath, content, 'utf-8');
+                logger.info('build.gradle written successfully');
+            }
+        } catch (error: any) {
+            logger.error(`Failed to generate build file: ${error.message}`, error);
+            throw new Error(`Build file generation failed: ${error.message}`);
         }
     }
 

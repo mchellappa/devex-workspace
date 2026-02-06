@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { TelemetryService } from '../services/telemetryService';
 import { JiraService } from '../services/jiraService';
+import { logger } from '../utils/logger';
 import mammoth from 'mammoth';
 
 export async function createJiraStoryFromLLD(
@@ -50,9 +51,9 @@ export async function createJiraStoryFromLLD(
 
         // Step 3: Get Jira configuration
         const config = vscode.workspace.getConfiguration('devex');
-        const jiraBaseUrl = config.get<string>('jiraBaseUrl');
-        const jiraEmail = config.get<string>('jiraEmail');
-        const jiraApiToken = config.get<string>('jiraApiToken');
+        const jiraBaseUrl = config.get<string>('jira.baseUrl');
+        const jiraEmail = config.get<string>('jira.email');
+        const jiraApiToken = config.get<string>('jira.apiToken');
         const jiraProjectKey = config.get<string>('jiraProjectKey');
 
         if (!jiraBaseUrl || !jiraEmail || !jiraApiToken) {
@@ -152,7 +153,16 @@ export async function createJiraStoryFromLLD(
         });
 
         // Step 6: Show preview and ask for confirmation
-        const previewMessage = `📋 **Story Preview**\n\n**Summary:** ${storyDetails.summary}\n\n**Project:** ${projectKey}\n**Priority:** ${priority}\n**Story Points:** ${storyDetails.storyPoints}\n**Assignee:** ${assigneeEmail || 'Unassigned'}\n${epicKey ? `**Epic:** ${epicKey}\n` : ''}${labels.length > 0 ? `**Labels:** ${labels.join(', ')}\n` : ''}\n**Subtasks:** ${storyDetails.subtasks.length}\n\n**Description:**\n${storyDetails.description.substring(0, 200)}...\n\n**Acceptance Criteria:**\n${storyDetails.acceptanceCriteria.split('\\n').slice(0, 3).join('\\n')}...\n\nProceed with story creation?`;
+        let criteriaPreview: string;
+        if (typeof storyDetails.acceptanceCriteria === 'string') {
+            criteriaPreview = storyDetails.acceptanceCriteria.split('\\n').slice(0, 3).join('\\n');
+        } else if (Array.isArray(storyDetails.acceptanceCriteria)) {
+            criteriaPreview = (storyDetails.acceptanceCriteria as string[]).slice(0, 3).join('\\n');
+        } else {
+            criteriaPreview = String(storyDetails.acceptanceCriteria).substring(0, 200);
+        }
+        
+        const previewMessage = `📋 **Story Preview**\n\n**Summary:** ${storyDetails.summary}\n\n**Project:** ${projectKey}\n**Priority:** ${priority}\n**Story Points:** ${storyDetails.storyPoints}\n**Assignee:** ${assigneeEmail || 'Unassigned'}\n${epicKey ? `**Epic:** ${epicKey}\n` : ''}${labels.length > 0 ? `**Labels:** ${labels.join(', ')}\n` : ''}**Subtasks:** ${storyDetails.subtasks.length}\n\n**Description:**\n${storyDetails.description.substring(0, 200)}...\n\n**Acceptance Criteria:**\n${criteriaPreview}...\n\nProceed with story creation?`;
 
         const confirmCreate = await vscode.window.showInformationMessage(
             previewMessage,
@@ -215,11 +225,21 @@ export async function createJiraStoryFromLLD(
                 throw new Error('Failed to create Jira story');
             }
 
+            logger.info(`Successfully created story: ${createdIssue.key}`);
+
             progress.report({ increment: 20, message: 'Creating subtasks...' });
 
-            // Step 7: Create subtasks
+            // Step 7: Create subtasks (with error handling to continue if some fail)
+            const subtaskResults: { success: boolean; summary: string; key?: string; error?: string }[] = [];
             for (const subtask of storyDetails.subtasks) {
-                await jiraService.createSubtask(createdIssue.key, subtask.summary, subtask.description);
+                try {
+                    const createdSubtask = await jiraService.createSubtask(createdIssue.key, subtask.summary, subtask.description);
+                    subtaskResults.push({ success: true, summary: subtask.summary, key: createdSubtask.key });
+                    logger.info(`Created subtask: ${createdSubtask.key}`);
+                } catch (subtaskError: any) {
+                    subtaskResults.push({ success: false, summary: subtask.summary, error: subtaskError.message });
+                    logger.error(`Failed to create subtask "${subtask.summary}": ${subtaskError.message}`);
+                }
             }
 
             progress.report({ increment: 20, message: 'Adding LLD as attachment...' });
@@ -241,9 +261,15 @@ export async function createJiraStoryFromLLD(
             progress.report({ increment: 10, message: 'Story created successfully!' });
 
             const duration = Date.now() - startTime;
+            // Prepare subtask summary
+            const successCount = subtaskResults.filter(r => r.success).length;
+            const failureCount = subtaskResults.filter(r => !r.success).length;
+            
             telemetryService.trackEvent('jira.story.created.from.lld', {
                 duration: duration.toString(),
                 subtaskCount: storyDetails.subtasks.length.toString(),
+                subtasksCreated: successCount.toString(),
+                subtasksFailed: failureCount.toString(),
                 storyPoints: storyDetails.storyPoints?.toString() || '0',
                 priority: priority,
                 hasAssignee: (!!assigneeEmail).toString(),
@@ -251,19 +277,64 @@ export async function createJiraStoryFromLLD(
                 labelCount: labels.length.toString()
             });
 
-            // Show success message with link to Jira
+            // Show comprehensive success message with story details and link
             const issueUrl = `${jiraBaseUrl}/browse/${createdIssue.key}`;
+            let message = `✅ Jira Story Created: ${createdIssue.key}\n\n`;
+            message += `📋 ${storyDetails.summary}\n`;
+            message += `📊 Story Points: ${storyDetails.storyPoints || 'None'} | Priority: ${priority}\n`;
+            
+            if (successCount > 0 || failureCount > 0) {
+                message += `🔹 Subtasks: ${successCount} created`;
+                if (failureCount > 0) {
+                    message += `, ${failureCount} failed (see Output panel for details)`;
+                }
+                message += '\n';
+            }
+            
+            message += `\n🔗 ${issueUrl}`;
+
             const openInBrowser = await vscode.window.showInformationMessage(
-                `✅ Jira Story ${createdIssue.key} created successfully!`,
-                'Open in Browser',
-                'Copy Link'
+                message,
+                'Open in Jira',
+                'Copy Link',
+                'View Details'
             );
 
-            if (openInBrowser === 'Open in Browser') {
+            if (openInBrowser === 'Open in Jira') {
                 await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
             } else if (openInBrowser === 'Copy Link') {
                 await vscode.env.clipboard.writeText(issueUrl);
                 vscode.window.showInformationMessage('Link copied to clipboard');
+            } else if (openInBrowser === 'View Details') {
+                // Show detailed breakdown in output channel
+                const outputChannel = vscode.window.createOutputChannel('DevEx - Jira Story Details');
+                outputChannel.clear();
+                outputChannel.appendLine(`Jira Story Created: ${createdIssue.key}`);
+                outputChannel.appendLine(`Link: ${issueUrl}`);
+                outputChannel.appendLine('');
+                outputChannel.appendLine(`Summary: ${storyDetails.summary}`);
+                outputChannel.appendLine(`Story Points: ${storyDetails.storyPoints || 'None'}`);
+                outputChannel.appendLine(`Priority: ${priority}`);
+                if (assigneeEmail) {
+                    outputChannel.appendLine(`Assignee: ${assigneeEmail}`);
+                }
+                if (epicKey) {
+                    outputChannel.appendLine(`Epic: ${epicKey}`);
+                }
+                if (labels.length > 0) {
+                    outputChannel.appendLine(`Labels: ${labels.join(', ')}`);
+                }
+                outputChannel.appendLine('');
+                outputChannel.appendLine('Subtasks:');
+                subtaskResults.forEach(result => {
+                    if (result.success) {
+                        outputChannel.appendLine(`  ✅ ${result.key}: ${result.summary}`);
+                    } else {
+                        outputChannel.appendLine(`  ❌ ${result.summary}`);
+                        outputChannel.appendLine(`     Error: ${result.error}`);
+                    }
+                });
+                outputChannel.show();
             }
         });
 

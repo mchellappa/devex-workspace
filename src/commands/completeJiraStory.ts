@@ -14,9 +14,9 @@ export async function completeJiraStory(
     try {
         // Step 1: Get Jira configuration
         const config = vscode.workspace.getConfiguration('devex');
-        const jiraBaseUrl = config.get<string>('jiraBaseUrl');
-        const jiraEmail = config.get<string>('jiraEmail');
-        const jiraApiToken = config.get<string>('jiraApiToken');
+        const jiraBaseUrl = config.get<string>('jira.baseUrl');
+        const jiraEmail = config.get<string>('jira.email');
+        const jiraApiToken = config.get<string>('jira.apiToken');
 
         if (!jiraBaseUrl || !jiraEmail || !jiraApiToken) {
             const configure = await vscode.window.showErrorMessage(
@@ -64,12 +64,18 @@ export async function completeJiraStory(
         const git = gitExtension?.getAPI(1);
 
         if (!git) {
-            throw new Error('Git extension not found. Please install the Git extension.');
+            throw new Error('Git extension not found. Please ensure VS Code Git extension is enabled.');
+        }
+
+        // Wait for git to initialize if needed
+        if (git.repositories.length === 0) {
+            // Try to wait a bit for git to initialize
+            await new Promise(resolve => setTimeout(resolve, 1000));
         }
 
         const repository = git.repositories[0];
         if (!repository) {
-            throw new Error('No Git repository found in workspace');
+            throw new Error('No Git repository found in workspace. Please ensure your workspace is a Git repository (run: git init)');
         }
 
         // Step 4: Fetch issue details
@@ -150,7 +156,11 @@ export async function completeJiraStory(
 
             // Step 8: Stage all changes
             if (changes.length > 0) {
-                await repository.add(changes.map((c: any) => c.uri.fsPath));
+                try {
+                    await repository.add(changes.map((c: any) => c.uri.fsPath));
+                } catch (addError: any) {
+                    throw new Error(`Failed to stage changes: ${addError.message}. Check that files exist and are not locked.`);
+                }
             }
 
             progress.report({ increment: 10, message: 'Creating commit...' });
@@ -172,20 +182,60 @@ export async function completeJiraStory(
                 return;
             }
 
-            await repository.commit(commitMessage);
+            try {
+                await repository.commit(commitMessage);
+            } catch (commitError: any) {
+                throw new Error(`Failed to create commit: ${commitError.message}. Check that you have git configured (user.name and user.email).`);
+            }
 
             progress.report({ increment: 10, message: 'Pushing to remote...' });
 
             // Step 10: Push to remote
             try {
+                // Get current branch
+                const currentBranch = repository.state.HEAD?.name;
+                
+                // Try to push - if no upstream, VS Code Git API will handle it
                 await repository.push();
+                
             } catch (pushError: any) {
-                vscode.window.showWarningMessage(`Push failed: ${pushError.message}. You may need to push manually.`);
+                // If push fails due to no upstream, try to set it
+                if (pushError.message?.includes('no upstream') || 
+                    pushError.message?.includes('has no upstream branch') ||
+                    pushError.gitErrorCode === 'NoUpstreamBranch') {
+                    
+                    const currentBranch = repository.state.HEAD?.name;
+                    if (currentBranch) {
+                        try {
+                            // Set upstream and push using git command
+                            const { exec } = require('child_process');
+                            const util = require('util');
+                            const execPromise = util.promisify(exec);
+                            
+                            vscode.window.showInformationMessage(`Setting upstream for branch: ${currentBranch}`);
+                            await execPromise(`git push --set-upstream origin ${currentBranch}`, { 
+                                cwd: workspaceFolder.uri.fsPath 
+                            });
+                            vscode.window.showInformationMessage(`✅ Pushed to origin/${currentBranch}`);
+                        } catch (upstreamError: any) {
+                            throw new Error(`Failed to set upstream and push: ${upstreamError.message}`);
+                        }
+                    } else {
+                        throw new Error('Cannot push: no current branch detected');
+                    }
+                } else {
+                    vscode.window.showWarningMessage(`Push failed: ${pushError.message}. You may need to push manually.`);
+                }
             }
 
             // Get commit hash
-            const headCommit = await repository.getCommit('HEAD');
-            const commitHash = headCommit.hash.substring(0, 8);
+            let commitHash = 'unknown';
+            try {
+                const headCommit = await repository.getCommit('HEAD');
+                commitHash = headCommit.hash.substring(0, 8);
+            } catch (hashError: any) {
+                console.warn('Could not get commit hash:', hashError.message);
+            }
 
             let prUrl = '';
 
@@ -234,16 +284,17 @@ export async function completeJiraStory(
 
             await jiraService.addComment(selectedIssueKey, completionComment);
 
-            // Step 14: Transition to Done if requested
+            // Step 14: Transition to DONE if requested
+            // Note: transitionIssue has conversational error handling built-in
             if (shouldTransitionToDone) {
-                progress.report({ increment: 10, message: 'Transitioning to Done...' });
+                progress.report({ increment: 10, message: 'Transitioning to DONE...' });
 
                 try {
-                    await jiraService.transitionIssue(selectedIssueKey, 'Done');
+                    await jiraService.transitionIssue(selectedIssueKey, 'DONE');
+                    vscode.window.showInformationMessage(`✅ ${selectedIssueKey} transitioned to DONE`);
                 } catch (transitionError: any) {
-                    vscode.window.showWarningMessage(
-                        `Could not transition to Done: ${transitionError.message}. Please update manually.`
-                    );
+                    // Only log - user already saw conversational error handling
+                    console.log('Transition did not complete:', transitionError.message);
                 }
             }
 
@@ -279,9 +330,22 @@ export async function completeJiraStory(
         });
 
     } catch (error: any) {
-        vscode.window.showErrorMessage(`Failed to complete story: ${error.message}`);
+        const errorMsg = error.message || String(error);
+        console.error('Complete Jira Story error:', error);
+        
+        // Show detailed error message
+        vscode.window.showErrorMessage(
+            `Failed to complete story: ${errorMsg}`,
+            'View Output'
+        ).then(action => {
+            if (action === 'View Output') {
+                vscode.commands.executeCommand('workbench.action.output.toggleOutput');
+            }
+        });
+        
         telemetryService.trackEvent('jira.story.completion.error', {
-            error: error.message
+            error: errorMsg,
+            stack: error.stack?.substring(0, 500) || 'no stack'
         });
     }
 }
@@ -366,33 +430,130 @@ async function createPullRequest(
     commitMessage: string,
     progress: vscode.Progress<{ increment?: number; message?: string }>
 ): Promise<string> {
-    // Check if GitHub CLI is available
-    const terminal = vscode.window.createTerminal({
-        name: 'GitHub PR',
-        cwd: workspacePath,
-        hideFromUser: true
-    });
-
-    // Get current branch name
-    const gitExtension = vscode.extensions.getExtension('vscode.git')?.exports;
-    const git = gitExtension?.getAPI(1);
-    const repository = git?.repositories[0];
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
     
-    const currentBranch = repository?.state.HEAD?.name || 'main';
-    
-    // Create PR using GitHub CLI
-    const prTitle = `${issueKey}: ${issueSummary}`;
-    const prBody = `Resolves ${issueKey}\n\n${commitMessage}\n\n_Created by DevEx AI Assistant_`;
-
-    terminal.sendText(`gh pr create --title "${prTitle}" --body "${prBody}" --head ${currentBranch}`, true);
-
-    // Wait a bit for the command to execute
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Try to get PR URL from GitHub CLI
-    terminal.sendText('gh pr view --json url -q .url', true);
-
-    // Note: In a real implementation, we'd capture the terminal output
-    // For now, return a placeholder
-    return `https://github.com/owner/repo/pulls`;
+    try {
+        // Get current branch name
+        const gitExtension = vscode.extensions.getExtension('vscode.git')?.exports;
+        const git = gitExtension?.getAPI(1);
+        const repository = git?.repositories[0];
+        
+        const currentBranch = repository?.state.HEAD?.name || 'main';
+        
+        // Try GitHub CLI first
+        let ghCliAvailable = false;
+        try {
+            await execPromise('gh --version', { cwd: workspacePath });
+            await execPromise('gh auth status', { cwd: workspacePath });
+            ghCliAvailable = true;
+        } catch (error) {
+            // gh CLI not available - will use browser fallback
+        }
+        
+        if (ghCliAvailable) {
+            // Create PR using GitHub CLI
+            const prTitle = `${issueKey}: ${issueSummary}`;
+            const prBody = `Resolves ${issueKey}\n\n${commitMessage}\n\n_Created by DevEx AI Assistant_`;
+            
+            progress.report({ message: 'Creating PR via GitHub CLI...' });
+            
+            const createPrCommand = `gh pr create --title "${prTitle}" --body "${prBody}" --head ${currentBranch}`;
+            const { stdout } = await execPromise(createPrCommand, { cwd: workspacePath });
+            
+            // Extract PR URL from output
+            const urlMatch = stdout.match(/https:\/\/github\.com\/[^\s]+/);
+            if (urlMatch) {
+                return urlMatch[0];
+            }
+            
+            // Fallback to gh pr view
+            try {
+                const { stdout: prUrl } = await execPromise('gh pr view --json url -q .url', { cwd: workspacePath });
+                return prUrl.trim();
+            } catch (viewError) {
+                return 'PR created successfully';
+            }
+        } else {
+            // Fallback: Open GitHub PR creation page in browser with pre-filled form
+            progress.report({ message: 'Opening GitHub PR page in browser...' });
+            
+            try {
+                // Get remote URL
+                const { stdout: remoteUrl } = await execPromise('git remote get-url origin', { cwd: workspacePath });
+                const url = remoteUrl.trim();
+                
+                // Parse GitHub owner/repo from URL
+                // Handles: git@github.com:owner/repo.git or https://github.com/owner/repo.git
+                let owner = '';
+                let repo = '';
+                
+                const sshMatch = url.match(/git@github\.com:([^/]+)\/([^.]+)(\.git)?/);
+                const httpsMatch = url.match(/https:\/\/github\.com\/([^/]+)\/([^.]+)(\.git)?/);
+                
+                if (sshMatch) {
+                    owner = sshMatch[1];
+                    repo = sshMatch[2];
+                } else if (httpsMatch) {
+                    owner = httpsMatch[1];
+                    repo = httpsMatch[2];
+                } else {
+                    throw new Error('Could not parse GitHub repository URL');
+                }
+                
+                // Build PR creation URL with pre-filled form
+                const prTitle = `${issueKey}: ${issueSummary}`;
+                const prBody = `Resolves ${issueKey}\n\n${commitMessage}\n\n_Created by DevEx AI Assistant_`;
+                const encodedTitle = encodeURIComponent(prTitle);
+                const encodedBody = encodeURIComponent(prBody);
+                
+                // Get base branch (usually main or master)
+                let baseBranch = 'main';
+                try {
+                    const { stdout: defaultBranch } = await execPromise('git symbolic-ref refs/remotes/origin/HEAD', { cwd: workspacePath });
+                    baseBranch = defaultBranch.trim().replace('refs/remotes/origin/', '');
+                } catch (err) {
+                    // Fallback to main
+                }
+                
+                const prUrl = `https://github.com/${owner}/${repo}/compare/${baseBranch}...${currentBranch}?quick_pull=1&title=${encodedTitle}&body=${encodedBody}`;
+                
+                // Open in browser
+                await vscode.env.openExternal(vscode.Uri.parse(prUrl));
+                
+                // Show message
+                const action = await vscode.window.showInformationMessage(
+                    `📝 GitHub PR page opened in browser with pre-filled form.\\n\\nAfter creating the PR, paste the URL here:`,
+                    { modal: false },
+                    'Enter PR URL',
+                    'Skip'
+                );
+                
+                if (action === 'Enter PR URL') {
+                    const manualPrUrl = await vscode.window.showInputBox({
+                        prompt: 'Enter the GitHub PR URL',
+                        placeHolder: 'https://github.com/owner/repo/pull/123',
+                        validateInput: (value) => {
+                            return value && value.includes('github.com') && value.includes('/pull/') 
+                                ? null 
+                                : 'Please enter a valid GitHub PR URL';
+                        }
+                    });
+                    
+                    return manualPrUrl || 'PR created manually';
+                }
+                
+                return 'PR form opened in browser';
+                
+            } catch (error: any) {
+                vscode.window.showErrorMessage(`Could not open PR page: ${error.message}`);
+                throw error;
+            }
+        }
+        
+    } catch (error: any) {
+        vscode.window.showErrorMessage(`Failed to create PR: ${error.message}`);
+        throw error;
+    }
 }
