@@ -1,0 +1,55 @@
+using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
+
+namespace {{namespace}}.Data;
+
+public class {{className}} : IRepository<{{entityName}}>
+{
+    private readonly ApplicationDbContext _context;
+    private readonly DbSet<{{entityName}}> _dbSet;
+
+    public {{className}}(ApplicationDbContext context)
+    {
+        _context = context;
+        _dbSet = context.Set<{{entityName}}>();
+    }
+
+    public async Task<IEnumerable<{{entityName}}>> GetAllAsync()
+    {
+        return await _dbSet.ToListAsync();
+    }
+
+    public async Task<{{entityName}}?> GetByIdAsync(int id)
+    {
+        return await _dbSet.FindAsync(id);
+    }
+
+    public async Task<IEnumerable<{{entityName}}>> FindAsync(Expression<Func<{{entityName}}, bool>> predicate)
+    {
+        return await _dbSet.Where(predicate).ToListAsync();
+    }
+
+    public async Task<{{entityName}}> AddAsync({{entityName}} entity)
+    {
+        await _dbSet.AddAsync(entity);
+        await SaveChangesAsync();
+        return entity;
+    }
+
+    public async Task UpdateAsync({{entityName}} entity)
+    {
+        _dbSet.Update(entity);
+        await SaveChangesAsync();
+    }
+
+    public async Task DeleteAsync({{entityName}} entity)
+    {
+        _dbSet.Remove(entity);
+        await SaveChangesAsync();
+    }
+
+    public async Task<int> SaveChangesAsync()
+    {
+        return await _context.SaveChangesAsync();
+    }
+}

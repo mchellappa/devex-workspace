@@ -6,6 +6,7 @@ import { TelemetryService } from '../services/telemetryService';
 import { JiraService } from '../services/jiraService';
 import { TemplateProvider } from '../services/templateProvider';
 import { logger } from '../utils/logger';
+import { getConfig } from '../utils/config';
 
 // Register Handlebars helpers
 Handlebars.registerHelper('camelCase', function(str: string) {
@@ -196,7 +197,32 @@ export async function implementJiraStory(
                 throw new Error('No workspace folder found');
             }
 
-            const projectInfo = await detectProjectStructure(workspaceFolder.uri.fsPath);
+            // First, try to get tech stack from LLD
+            const techStackFromLLD = extractTechStackFromLLD(issue.description);
+            
+            // If tech stack is unclear or not in LLD, ask user
+            let confirmedTechStack: 'java' | 'dotnet' | 'nodejs' | 'python' | undefined = techStackFromLLD;
+            
+            if (!confirmedTechStack) {
+                const techStackChoice = await vscode.window.showQuickPick([
+                    { label: 'Java (Spring Boot)', value: 'java', description: 'Spring Boot with Java' },
+                    { label: '.NET Core', value: 'dotnet', description: 'ASP.NET Core with C#' },
+                    { label: 'Node.js', value: 'nodejs', description: 'Express.js with TypeScript' },
+                    { label: 'Python', value: 'python', description: 'FastAPI or Flask' }
+                ], {
+                    placeHolder: 'Select technology stack (not found in LLD)',
+                    title: 'Choose Technology Stack'
+                });
+                
+                if (!techStackChoice) {
+                    vscode.window.showInformationMessage('Implementation cancelled - no tech stack selected');
+                    return;
+                }
+                
+                confirmedTechStack = techStackChoice.value as 'java' | 'dotnet' | 'nodejs' | 'python';
+            }
+
+            const projectInfo = await detectProjectStructure(workspaceFolder.uri.fsPath, confirmedTechStack);
             
             // Warn if build file is missing
             if (!projectInfo.hasBuildFile) {
@@ -252,6 +278,23 @@ export async function implementJiraStory(
             const generatedFiles: string[] = [];
             const templateProvider = new TemplateProvider(context.extensionPath);
 
+            // Add .gitignore if project doesn't have one and this is a new project
+            const gitignorePath = path.join(workspaceFolder.uri.fsPath, '.gitignore');
+            if (!fs.existsSync(gitignorePath) && !projectInfo.hasBuildFile) {
+                let gitignoreTemplate = '';
+                if (projectInfo.type === 'spring-boot') {
+                    gitignoreTemplate = await templateProvider.readSpringBootTemplate('.gitignore.template');
+                } else if (projectInfo.type === 'dotnet') {
+                    gitignoreTemplate = await templateProvider.readDotnetTemplate('.gitignore.template');
+                }
+                
+                if (gitignoreTemplate) {
+                    fs.writeFileSync(gitignorePath, gitignoreTemplate);
+                    generatedFiles.push('.gitignore');
+                    progress.report({ message: 'Generated .gitignore' });
+                }
+            }
+
             for (const fileSpec of implementationPlan.files) {
                 const fileContent = await generateCodeFileFromTemplate(
                     fileSpec,
@@ -277,6 +320,8 @@ export async function implementJiraStory(
             progress.report({ increment: 5, message: 'Committing to git...' });
 
             // Step 10: Git commit (no push - user needs to test first)
+            let commitHash = '';
+            let repoUrl = '';
             try {
                 const gitExtension = vscode.extensions.getExtension('vscode.git')?.exports;
                 if (gitExtension) {
@@ -298,6 +343,25 @@ export async function implementJiraStory(
                         const commitMessage = `${selectedIssueKey}: Generated implementation\n\nGenerated files:\n${generatedFiles.map(f => `- ${f}`).join('\n')}`;
                         await repo.commit(commitMessage);
                         
+                        // Get commit hash for remote link
+                        commitHash = repo.state.HEAD?.commit || '';
+                        
+                        // Try to get GitHub repo URL
+                        try {
+                            const remotes = await repo.getRemotes();
+                            const originRemote = remotes.find((r: any) => r.name === 'origin');
+                            if (originRemote && originRemote.fetchUrl) {
+                                const remoteUrl = originRemote.fetchUrl;
+                                // Convert SSH or HTTPS to GitHub URL
+                                const githubMatch = remoteUrl.match(/github\.com[:/](.+?)\/(.+?)(\.git)?$/);
+                                if (githubMatch) {
+                                    repoUrl = `https://github.com/${githubMatch[1]}/${githubMatch[2]}`;
+                                }
+                            }
+                        } catch (remoteError) {
+                            logger.warn('Could not get remote URL');
+                        }
+                        
                         vscode.window.showInformationMessage(`✅ Committed ${generatedFiles.length} files to git (not pushed yet - test first!)`);
                     }
                 }
@@ -312,6 +376,17 @@ export async function implementJiraStory(
             const comment = `**Implementation Started**\n\n**Generated Files:**\n${generatedFiles.map(f => `- ${f}`).join('\n')}\n\n_Generated by DevEx AI Assistant_`;
 
             await jiraService.addComment(selectedIssueKey!, comment);
+
+            // Add commit link to Jira's Development section
+            if (commitHash && repoUrl) {
+                const commitUrl = `${repoUrl}/commit/${commitHash}`;
+                await jiraService.addRemoteLink(
+                    selectedIssueKey!,
+                    commitUrl,
+                    `Commit: ${commitHash.substring(0, 7)}`,
+                    'Commit'
+                );
+            }
 
             // Try to transition to IN PROGRESS
             // Note: transitionIssue has conversational error handling built-in
@@ -364,7 +439,108 @@ interface ProjectInfo {
     hasBuildFile: boolean;
 }
 
-async function detectProjectStructure(workspacePath: string): Promise<ProjectInfo> {
+function extractTechStackFromLLD(lldContent: string): 'java' | 'dotnet' | 'nodejs' | 'python' | undefined {
+    if (!lldContent) {
+        return undefined;
+    }
+
+    const lowerContent = lldContent.toLowerCase();
+
+    // Check for explicit technology_stack field
+    const techStackMatch = lldContent.match(/technology[_\s]*stack\s*:?\s*([^\n]+)/i);
+    if (techStackMatch) {
+        const techStack = techStackMatch[1].trim().toLowerCase();
+        
+        if (techStack.includes('java') || techStack.includes('spring')) {
+            return 'java';
+        }
+        if (techStack.includes('.net') || techStack.includes('dotnet') || techStack.includes('c#') || techStack.includes('csharp')) {
+            return 'dotnet';
+        }
+        if (techStack.includes('node') || techStack.includes('typescript') || techStack.includes('javascript')) {
+            return 'nodejs';
+        }
+        if (techStack.includes('python') || techStack.includes('fastapi') || techStack.includes('flask')) {
+            return 'python';
+        }
+    }
+
+    // Fallback: Check for technology mentions in the content
+    const javaScore = (lowerContent.match(/\b(java|spring|maven|gradle|jdk)\b/g) || []).length;
+    const dotnetScore = (lowerContent.match(/\b(\.net|dotnet|c#|csharp|asp\.net|entity framework)\b/g) || []).length;
+    const nodejsScore = (lowerContent.match(/\b(node\.js|nodejs|typescript|express|npm)\b/g) || []).length;
+    const pythonScore = (lowerContent.match(/\b(python|fastapi|flask|django|pip)\b/g) || []).length;
+
+    const maxScore = Math.max(javaScore, dotnetScore, nodejsScore, pythonScore);
+    
+    // Only return if there's a clear winner (at least 3 mentions)
+    if (maxScore >= 3) {
+        if (javaScore === maxScore) return 'java';
+        if (dotnetScore === maxScore) return 'dotnet';
+        if (nodejsScore === maxScore) return 'nodejs';
+        if (pythonScore === maxScore) return 'python';
+    }
+
+    return undefined;
+}
+
+async function detectProjectStructure(workspacePath: string, preferredTechStack?: 'java' | 'dotnet' | 'nodejs' | 'python'): Promise<ProjectInfo> {
+    // If tech stack is explicitly provided, prioritize it
+    if (preferredTechStack === 'dotnet') {
+        // Check for .csproj files
+        const csprojFiles = fs.existsSync(workspacePath) ? fs.readdirSync(workspacePath).filter(f => f.endsWith('.csproj')) : [];
+        return {
+            type: 'dotnet',
+            srcPath: '.',
+            language: 'csharp',
+            hasBuildFile: csprojFiles.length > 0
+        };
+    }
+
+    if (preferredTechStack === 'java') {
+        // Check for pom.xml or build.gradle
+        const hasPom = fs.existsSync(path.join(workspacePath, 'pom.xml'));
+        const hasGradle = fs.existsSync(path.join(workspacePath, 'build.gradle')) || 
+                         fs.existsSync(path.join(workspacePath, 'build.gradle.kts'));
+        
+        let basePackage = 'com.company.app';
+        const srcMainJava = path.join(workspacePath, 'src', 'main', 'java');
+        
+        if (fs.existsSync(srcMainJava)) {
+            basePackage = findBasePackage(srcMainJava);
+        }
+
+        return {
+            type: 'spring-boot',
+            basePackage,
+            srcPath: 'src/main/java',
+            language: 'java',
+            hasBuildFile: hasPom || hasGradle
+        };
+    }
+
+    if (preferredTechStack === 'nodejs') {
+        const hasPackageJson = fs.existsSync(path.join(workspacePath, 'package.json'));
+        return {
+            type: 'nodejs',
+            srcPath: 'src',
+            language: 'typescript',
+            hasBuildFile: hasPackageJson
+        };
+    }
+
+    if (preferredTechStack === 'python') {
+        const hasRequirements = fs.existsSync(path.join(workspacePath, 'requirements.txt')) ||
+                               fs.existsSync(path.join(workspacePath, 'setup.py'));
+        return {
+            type: 'python',
+            srcPath: 'src',
+            language: 'python',
+            hasBuildFile: hasRequirements
+        };
+    }
+
+    // Fallback to file-based detection if no preference
     // Check for pom.xml (Maven Spring Boot)
     if (fs.existsSync(path.join(workspacePath, 'pom.xml'))) {
         const pomContent = fs.readFileSync(path.join(workspacePath, 'pom.xml'), 'utf-8');
@@ -485,7 +661,9 @@ function findBasePackage(srcPath: string): string {
 
 interface FileSpec {
     path: string;
-    type: 'controller' | 'service' | 'repository' | 'entity' | 'dto' | 'config' | 'migration' | 'test' | 'pom' | 'build' | 'dependencies' | 'application';
+    type: 'controller' | 'service' | 'repository' | 'entity' | 'dto' | 'config' | 'migration' | 'test' | 'pom' | 'build' | 'dependencies' | 'application' | 
+          'csproj' | 'project' | 'program' | 'startup' | 'interface-service' | 'interface-repository' | 'dbcontext' | 'context' | 'middleware' | 'exception' |
+          'dto-request' | 'dto-response' | 'request' | 'response' | 'model';
     name: string;
     description: string;
     endpoints?: Array<{ method: string; path: string; operationId: string; summary: string }>;
@@ -517,15 +695,17 @@ async function generateImplementationPlan(
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     const hasPomXml = workspaceFolder && fs.existsSync(path.join(workspaceFolder.uri.fsPath, 'pom.xml'));
     const hasBuildGradle = workspaceFolder && (fs.existsSync(path.join(workspaceFolder.uri.fsPath, 'build.gradle')) || fs.existsSync(path.join(workspaceFolder.uri.fsPath, 'build.gradle.kts')));
-    const buildTool = hasPomXml ? 'Maven' : (hasBuildGradle ? 'Gradle' : 'Maven');
+    const hasCsproj = workspaceFolder && fs.readdirSync(workspaceFolder.uri.fsPath).some(f => f.endsWith('.csproj'));
+    const buildTool = projectInfo.type === 'dotnet' ? '.NET SDK' : (hasPomXml ? 'Maven' : (hasBuildGradle ? 'Gradle' : 'Maven'));
 
     const prompt = `You are a senior software engineer creating an implementation plan for Jira tasks.
 
 **Project Type:** ${projectInfo.type}
 **Language:** ${projectInfo.language}
-${projectInfo.basePackage ? `**Base Package:** ${projectInfo.basePackage}` : ''}
+${projectInfo.basePackage ? `**Base Package/Namespace:** ${projectInfo.basePackage}` : ''}
 **Has Build File:** ${projectInfo.hasBuildFile}
-**Build Tool:** ${buildTool} (DO NOT CHANGE THIS - use ${buildTool === 'Maven' ? 'pom.xml' : 'build.gradle'} ONLY)
+${projectInfo.type === 'spring-boot' ? `**Build Tool:** ${buildTool} (DO NOT CHANGE THIS - use ${buildTool === 'Maven' ? 'pom.xml' : 'build.gradle'} ONLY)` : ''}
+${projectInfo.type === 'dotnet' ? `**Build Tool:** .NET SDK (use .csproj files ONLY - NO pom.xml or package.json)` : ''}
 
 
 
@@ -552,6 +732,52 @@ ${!projectInfo.hasBuildFile ? `1. **pom.xml** (CRITICAL - CREATE FIRST, NOT buil
 9. Configuration classes if needed (@Configuration)
 10. Flyway migration SQL if database changes (V001__description.sql)
 11. Test classes (@SpringBootTest)
+` : ''}
+
+${projectInfo.type === 'dotnet' ? `
+For .NET Core, MUST generate:
+${!hasCsproj ? `1. **{ProjectName}.csproj** (CRITICAL - CREATE FIRST) - .NET 8.0 project file with:
+   - TargetFramework: net8.0 (NOT netcoreapp2.2 or any old version)
+   - PackageReferences: ASP.NET Core, EF Core, JWT, Serilog
+   - NO pom.xml, NO package.json, NO build.gradle - ONLY .csproj for .NET projects
+` : `1. .csproj updates - ONLY if new NuGet packages needed\n`}
+2. Program.cs with WebApplication builder and middleware configuration
+3. appsettings.json with connection strings and JWT config
+4. Controller classes (API endpoints with [ApiController], [Route] attributes)
+5. Service classes (IService interfaces + implementations with DI)
+6. Repository classes (IRepository<T> interfaces + implementations)
+7. DbContext class (Entity Framework Core)
+8. Entity/Model classes (with data annotations)
+9. DTO classes (Request/Response with validation attributes)
+10. GlobalExceptionHandler middleware
+11. Test project ({ProjectName}.Tests.csproj) with xUnit/NUnit
+
+⚠️ CRITICAL .NET NAMING RULES:
+- Controllers: {Feature}Controller (e.g., ACBController, NOT ACBControllerController)
+- Services: {Feature}Service + I{Feature}Service interface (e.g., ACBService + IACBService)
+- Repositories: {Feature}Repository + I{Feature}Repository (e.g., ACBRepository + IACBRepository)
+- Entities: {Feature}Entity or {Feature} (e.g., ACBEntity or ACB)
+- DTOs: {Feature}Request + {Feature}Response (e.g., ACBRequest + ACBResponse)
+- Namespace: Use consistent ${projectInfo.basePackage || 'Company.Application'}.* everywhere
+  - Controllers: ${projectInfo.basePackage || 'Company.Application'}.Controllers
+  - Services: ${projectInfo.basePackage || 'Company.Application'}.Services
+  - Repositories: ${projectInfo.basePackage || 'Company.Application'}.Data
+  - Models: ${projectInfo.basePackage || 'Company.Application'}.Models
+  - DTOs: ${projectInfo.basePackage || 'Company.Application'}.DTOs
+
+⚠️ REQUIRED FILES FOR .NET:
+- Data/IRepository.cs: Generic IRepository<T> interface
+- Data/Repository.cs: Generic Repository<T> implementation
+- Data/ApplicationDbContext.cs: DbContext (NOT {Feature}DbContext)
+- For each feature (e.g., ACB):
+  * Controllers/{Feature}Controller.cs
+  * Services/I{Feature}Service.cs (interface only)
+  * Services/{Feature}Service.cs (implementation)
+  * Data/I{Feature}Repository.cs : IRepository<{Feature}Entity>
+  * Data/{Feature}Repository.cs : Repository<{Feature}Entity>
+  * Models/{Feature}Entity.cs
+  * DTOs/{Feature}Request.cs
+  * DTOs/{Feature}Response.cs
 ` : ''}
 
 ${projectInfo.type === 'nodejs' ? `
@@ -618,6 +844,11 @@ async function generateCodeFileFromTemplate(
         return generateSpringBootFile(fileSpec, projectInfo, templateProvider);
     }
 
+    // For .NET projects, use templates
+    if (projectInfo.type === 'dotnet') {
+        return generateDotnetFile(fileSpec, projectInfo, templateProvider);
+    }
+
     // For other project types, fall back to AI with strict template requirements
     return generateCodeFileWithAI(fileSpec, context, projectInfo, progress);
 }
@@ -660,14 +891,15 @@ async function generateSpringBootFile(
         case 'build':
             if (fileName === 'pom.xml') {
                 templateName = 'pom.xml.template';
+                const appConfig = getConfig();
                 templateData = {
                     groupId: projectInfo.basePackage?.split('.').slice(0, 2).join('.') || 'com.company',
                     artifactId: fileSpec.name || 'app',
                     version: '0.0.1-SNAPSHOT',
                     name: fileSpec.name || 'Application',
                     description: fileSpec.description || 'Spring Boot Application',
-                    javaVersion: '21',
-                    springBootVersion: '3.4.1'
+                    javaVersion: appConfig.javaVersion,
+                    springBootVersion: appConfig.springBootVersion
                 };
             } else if (fileName === 'build.gradle') {
                 templateName = 'build.gradle.template';
@@ -719,6 +951,170 @@ async function generateSpringBootFile(
         return content;
     } catch (error: any) {
         logger.error(`Failed to generate from template ${templateName}: ${error.message}`);
+        throw error;
+    }
+}
+
+async function generateDotnetFile(
+    fileSpec: FileSpec,
+    projectInfo: ProjectInfo,
+    templateProvider: TemplateProvider
+): Promise<string> {
+    const fileName = path.basename(fileSpec.path);
+    
+    // Clean up the name - remove redundant suffixes
+    let cleanName = fileSpec.name;
+    
+    // Fix double suffixes: ACBControllerController → ACBController
+    if (cleanName.endsWith('ControllerController')) {
+        cleanName = cleanName.replace('ControllerController', 'Controller');
+    }
+    if (cleanName.endsWith('ServiceService')) {
+        cleanName = cleanName.replace('ServiceService', 'Service');
+    }
+    if (cleanName.endsWith('RepositoryRepository')) {
+        cleanName = cleanName.replace('RepositoryRepository', 'Repository');
+    }
+    
+    // Determine which template to use based on file type
+    let templateName = '';
+    let templateData: any = {
+        namespace: projectInfo.basePackage || 'Company.Application',
+        className: cleanName,
+        projectName: cleanName.replace(/Controller|Service|Repository|Entity|Request|Response|Tests?/g, '') || 'Application'
+    };
+
+    switch (fileSpec.type) {
+        case 'controller':
+            templateName = 'Controller.cs.template';
+            // ACBController → ACB
+            const featureName = cleanName.replace('Controller', '');
+            templateData.serviceName = featureName + 'Service';
+            templateData.serviceNameCamel = featureName.charAt(0).toLowerCase() + featureName.slice(1) + 'Service';
+            templateData.resourceName = featureName;
+            templateData.className = featureName + 'Controller';
+            break;
+
+        case 'service':
+            templateName = 'Service.cs.template';
+            const serviceFeature = cleanName.replace('Service', '');
+            templateData.className = serviceFeature + 'Service';
+            templateData.entityName = serviceFeature + 'Entity';
+            break;
+
+        case 'interface-service':
+            templateName = 'IService.cs.template';
+            const iServiceFeature = cleanName.replace(/^I/, '').replace('Service', '');
+            templateData.className = iServiceFeature + 'Service';
+            break;
+
+        case 'repository':
+            templateName = 'Repository.cs.template';
+            const repoFeature = cleanName.replace('Repository', '');
+            templateData.className = repoFeature + 'Repository';
+            templateData.entityName = repoFeature + 'Entity';
+            // If name is just "Repository", use generic template
+            if (cleanName === 'Repository' || cleanName === 'RepositoryGeneric') {
+                templateName = 'RepositoryGeneric.cs.template';
+                templateData.className = 'Repository';
+            }
+            break;
+
+        case 'interface-repository':
+            templateName = 'IRepository.cs.template';
+            const iRepoFeature = cleanName.replace(/^I/, '').replace('Repository', '');
+            templateData.className = iRepoFeature + 'Repository';
+            templateData.entityName = iRepoFeature + 'Entity';
+            // If name is just "IRepository", use generic template
+            if (cleanName === 'IRepository' || cleanName === 'IRepositoryGeneric') {
+                templateName = 'IRepositoryGeneric.cs.template';
+                templateData.className = 'IRepository';
+            }
+            break;
+
+        case 'entity':
+        case 'model':
+            templateName = 'Entity.cs.template';
+            const entityName = cleanName.replace('Entity', '');
+            templateData.className = entityName + 'Entity';
+            templateData.tableName = entityName + 's'; // Simple pluralization
+            break;
+
+        case 'dto-request':
+        case 'request':
+            templateName = 'RequestDto.cs.template';
+            const requestFeature = cleanName.replace(/Request|Dto/g, '');
+            templateData.className = requestFeature + 'Request';
+            break;
+
+        case 'dto-response':
+        case 'response':
+            templateName = 'ResponseDto.cs.template';
+            const responseFeature = cleanName.replace(/Response|Dto/g, '');
+            templateData.className = responseFeature + 'Response';
+            break;
+
+        case 'dbcontext':
+        case 'context':
+            templateName = 'DbContext.cs.template';
+            templateData.className = 'ApplicationDbContext'; // Always use ApplicationDbContext
+            break;
+
+        case 'middleware':
+        case 'exception':
+            templateName = 'GlobalExceptionHandler.cs.template';
+            break;
+
+        case 'project':
+        case 'csproj':
+            if (fileName.endsWith('.csproj')) {
+                templateName = 'Project.csproj.template';
+                templateData.projectName = fileSpec.name || 'Application';
+                templateData.targetFramework = 'net8.0';
+            }
+            break;
+
+        case 'program':
+        case 'startup':
+            templateName = 'Program.cs.template';
+            templateData.projectDescription = fileSpec.description || 'ASP.NET Core Application';
+            templateData.databaseName = templateData.projectName + 'Db';
+            break;
+
+        case 'config':
+            if (fileName === 'appsettings.json') {
+                templateName = 'appsettings.json.template';
+                templateData.databaseName = templateData.projectName + 'Db';
+            } else if (fileName === 'appsettings.Development.json') {
+                templateName = 'appsettings.Development.json.template';
+            }
+            break;
+
+        case 'test':
+            // TODO: Add test project templates
+            logger.warn('Test project generation not yet implemented for .NET');
+            return `// TODO: Generate test project for ${fileSpec.name}`;
+
+        default:
+            logger.warn(`No template found for .NET file type: ${fileSpec.type}, falling back to AI`);
+            return generateCodeFileWithAI(fileSpec, '', projectInfo, {
+                report: () => {}
+            } as any);
+    }
+
+    if (!templateName) {
+        throw new Error(`Unable to determine .NET template for ${fileSpec.path}`);
+    }
+
+    try {
+        const template = await templateProvider.readDotnetTemplate(templateName);
+        const compiled = Handlebars.compile(template);
+        const content = compiled(templateData);
+        
+        logger.info(`✓ Generated ${fileSpec.path} from ${templateName}`);
+        return content;
+    } catch (error: any) {
+        logger.error(`Failed to generate from .NET template ${templateName}: ${error.message}`);
         throw error;
     }
 }

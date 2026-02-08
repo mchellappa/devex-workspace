@@ -5,9 +5,153 @@ All notable changes to the DevEx AI Assistant extension will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.46] - 2026-02-05
+## [1.3.51] - 2026-02-06
+
+### Added
+- **.NET Core 8.0 Template System**: Complete .NET Core code generation with 15+ templates
+  - **Templates Created**: 
+    - `Project.csproj.template`: .NET 8.0 project file with modern package references (ASP.NET Core 8.0, EF Core 8.0, JWT, Serilog)
+    - `Program.cs.template`: Minimal API with WebApplication builder, JWT auth, Swagger, health checks
+    - `Controller.cs.template`: API controllers with [ApiController], async/await patterns
+    - `Service.cs.template` + `IService.cs.template`: Service layer with dependency injection
+    - `Repository.cs.template` + `IRepository.cs.template`: Generic repository pattern with Entity Framework
+    - `RepositoryGeneric.cs.template` + `IRepositoryGeneric.cs.template`: Base generic repository classes
+    - `Entity.cs.template`: Domain models with data annotations
+    - `RequestDto.cs.template` + `ResponseDto.cs.template`: DTOs with validation
+    - `DbContext.cs.template`: ApplicationDbContext for Entity Framework Core
+    - `GlobalExceptionHandler.cs.template`: Exception handling middleware
+    - `appsettings.json.template` + `appsettings.Development.json.template`: Configuration files
+    - `.gitignore.template`: Comprehensive .NET gitignore
+  - **Features**:
+    - Target Framework: net8.0 (no old versions like netcoreapp2.2)
+    - Modern C# 12 patterns
+    - JWT authentication support
+    - Entity Framework Core 8.0
+    - Serilog logging
+    - Health checks
+    - Swagger/OpenAPI documentation
+  - **Generator Logic**: Added `generateDotnetFile()` with intelligent naming:
+    - Fixes double suffixes: ACBControllerController → ACBController
+    - Proper entity references: IRepository<ACBEntity> (not IRepository<ACBService>)
+    - Consistent naming: ACBService (not ACBServiceService)
+    - Namespace consistency: Company.Application.* everywhere
+
+- **Tech Stack Selection from LLD**: Intelligent project type detection
+  - **Problem**: System auto-detected based only on filesystem (could generate Java for .NET projects)
+  - **Solution**: Multi-level tech stack detection:
+    1. **Extract from LLD**: Parses `technology_stack` field from Jira issue description
+       - Detects: Java/Spring Boot, .NET/C#, Node.js/Express, Python/FastAPI
+       - Matches keywords: "spring", "dotnet", "asp.net", "c#", etc.
+    2. **User Confirmation**: If not found in LLD, prompts user with quick pick:
+       - Java (Spring Boot)
+       - .NET Core
+       - Node.js
+       - Python
+    3. **Project Detection**: Uses confirmed tech stack to configure project:
+       - Java → Spring Boot with Maven/Gradle
+       - .NET → ASP.NET Core with .csproj
+       - Node.js → Express with package.json
+       - Python → FastAPI with requirements.txt
+  - **AI Prompt Updates**: Enhanced with .NET-specific guidance:
+    - Explicit "NO pom.xml for .NET" warnings
+    - .NET naming conventions documented
+    - Required file structure specified
+    - Namespace consistency rules
+  - **Result**: Correct templates used based on LLD tech stack, not guesswork
+
+- **Jira Git Integration - Remote Links**: Commits and PRs now appear in Jira Development panel
+  - **Problem**: Links only appeared in comments, not in Jira's native Git integration UI
+  - **Solution**: Added `addRemoteLink()` method to JiraService:
+    - Uses Jira REST API `/rest/api/3/issue/{issueKey}/remotelink`
+    - **Implement Story**: Adds commit URL as remote link after git commit
+      - Parses git remote to build GitHub URL: `https://github.com/owner/repo/commit/{hash}`
+      - Shows as "Commit" relationship in Development section
+    - **Complete Story**: Adds PR URL as remote link after PR creation
+      - Shows as "Pull Request" relationship in Development section
+      - GitHub icon displayed in Jira UI
+    - Non-blocking: Failures don't stop workflow (logs warning only)
+  - **Result**: Native Jira-GitHub integration experience without requiring Jira-GitHub app
+
+- **Auto-Generated .gitignore**: Comprehensive .gitignore added for new projects
+  - **Templates**:
+    - `springboot/.gitignore.template`: Java/Maven/Gradle artifacts, IDE files (IntelliJ, Eclipse, VS Code), logs, databases
+    - `dotnet/.gitignore.template`: bin/obj folders, NuGet packages, Visual Studio files, Entity Framework databases
+  - **Logic**: Auto-generates .gitignore when:
+    - Project doesn't have one already
+    - This is a new project (hasBuildFile is false)
+  - **Workspace .gitignore**: Enhanced with support for:
+    - .NET Core (bin, obj, .vs, NuGet)
+    - Java/Spring Boot (target, .gradle, Maven wrapper)
+    - Node.js (node_modules, package-lock.json)
+    - Python (venv, __pycache__)
+    - Multiple IDEs (VS, IntelliJ, Eclipse, VS Code)
+    - OS files (Windows, macOS, Linux)
 
 ### Fixed
+- **.NET Code Generation Naming Issues**: Fixed multiple naming problems
+  - **Problems**:
+    - Double suffixes: ACBControllerController, ACBServiceService
+    - Wrong entity types: IRepository<ACBService> instead of IRepository<ACBEntity>
+    - Inconsistent namespaces: Mixed Company.Application and other namespaces
+    - Wrong DbContext names: FeatureDbContext instead of ApplicationDbContext
+  - **Solutions**:
+    1. **Name Cleaning**: Strip redundant suffixes in `generateDotnetFile()`
+    2. **Entity References**: All templates now use `{{entityName}}` variable
+       - Service: `IRepository<{{entityName}}>` (e.g., ACBEntity)
+       - Repository: Extends `Repository<{{entityName}}>`
+    3. **DbContext**: Always generates ApplicationDbContext (not feature-specific)
+    4. **Interface Names**: 
+       - IACBService (not IACBServiceService)
+       - IACBRepository (not IACBRepositoryRepository)
+  - **Template Updates**:
+    - Service.cs: Uses entityName for repository generic type
+    - Repository.cs: Concrete class for specific entity type
+    - IService.cs: Interface without Service suffix duplication
+  - **Result**: Clean, consistent .NET code that compiles on first run
+
+- **.NET Version Compatibility**: Enforced .NET 8.0 (LTS) everywhere
+  - **Problem**: AI sometimes generated netcoreapp2.2 or .NET 9.0 (odd version)
+  - **Solution**: 
+    - Templates hardcoded to net8.0
+    - AI prompt explicitly states ".NET 8.0 (NOT netcoreapp2.2)"
+    - Swashbuckle version 6.5.0 (compatible with .NET 8)
+  - **Result**: All packages compatible, no NU1202 errors
+
+## [1.3.50] - 2026-02-05
+
+### Fixed
+- **Spring Boot Code Generation - Java 21 and Spring Boot 3.x Compatibility**: Updated all templates
+  - **Problem**: Generated code used Java 17, deprecated imports (javax.validation), old security config
+  - **Solution**: Complete Spring Boot 3.x upgrade:
+    1. **Java 21**: Default Java version now 21 (was 17)
+    2. **Jakarta EE**: Changed `javax.validation` → `jakarta.validation` in all templates
+    3. **Model Classes**: Added Request/Response DTO templates with validation
+       - `RequestDto.java.template`: Request DTOs with Jakarta validation annotations
+       - `ResponseDto.java.template`: Response DTOs with Jackson annotations
+    4. **Exception Classes**: Added custom exception hierarchy
+       - `ApplicationException.java.template`: Base exception with HttpStatus/errorCode
+       - `ResourceNotFoundException.java.template`: 404 exceptions
+       - `BusinessValidationException.java.template`: 400 business rule violations
+       - `GlobalExceptionHandler.java.template`: Updated to handle all custom exceptions
+    5. **Security Classes**: Added Spring Boot 3.x security (not deprecated)
+       - `SecurityConfig.java.template`: Uses `SecurityFilterChain` bean (not WebSecurityConfigurerAdapter)
+       - `JwtRequestFilter.java.template`: JWT validation filter with Jakarta servlet
+       - `JwtAuthenticationEntryPoint.java.template`: 401 unauthorized handler
+       - `JwtTokenUtil.java.template`: JWT token generation/validation with jjwt 0.12.x
+    6. **Dependencies**: Added to pom.xml
+       - `spring-boot-starter-security`
+       - `jjwt-api`, `jjwt-impl`, `jjwt-jackson` (version 0.12.3)
+    7. **Generator**: Updated `springBootGenerator.ts` to generate all new classes
+  - **Result**:
+    - ✅ Java 21 as default version
+    - ✅ Jakarta EE validation (Spring Boot 3.x compatible)
+    - ✅ Request/Response DTOs generated for each resource
+    - ✅ Custom exception classes with proper error handling
+    - ✅ Spring Security 6.x configuration (SecurityFilterChain approach)
+    - ✅ JWT authentication ready with modern jjwt library
+    - ✅ Application main class included (was already there)
+    - ✅ All generated projects compile with Spring Boot 3.x
+
 - **Complete Jira Story - PR Creation Fallback for Non-GH Users**: Added browser-based PR creation
   - **Problem**: PR creation failed completely if GitHub CLI (`gh`) not installed
   - **User Feedback**: "gh is not installed in all laptop"

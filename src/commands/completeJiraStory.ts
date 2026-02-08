@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { TelemetryService } from '../services/telemetryService';
 import { JiraService } from '../services/jiraService';
+import { logger } from '../utils/logger';
 
 export async function completeJiraStory(
     context: vscode.ExtensionContext,
@@ -95,18 +96,12 @@ export async function completeJiraStory(
             // Step 5: Check for uncommitted changes
             const changes = repository.state.workingTreeChanges;
             const stagedChanges = repository.state.indexChanges;
+            const hasUncommittedChanges = changes.length > 0 || stagedChanges.length > 0;
 
-            if (changes.length === 0 && stagedChanges.length === 0) {
-                const noChanges = await vscode.window.showWarningMessage(
-                    'No uncommitted changes found. Continue with completion?',
-                    'Yes, Complete Anyway',
-                    'Cancel'
+            if (!hasUncommittedChanges) {
+                vscode.window.showInformationMessage(
+                    `No uncommitted changes found. Files were already committed in Implement Story. Proceeding with push and PR...`
                 );
-
-                if (noChanges !== 'Yes, Complete Anyway') {
-                    vscode.window.showInformationMessage('Completion cancelled');
-                    return;
-                }
             }
 
             // Step 6: Ask for completion options
@@ -154,19 +149,104 @@ export async function completeJiraStory(
 
             progress.report({ increment: 10, message: 'Staging changes...' });
 
-            // Step 8: Stage all changes
-            if (changes.length > 0) {
+            // Step 8: Stage and commit only if there are uncommitted changes
+            let commitHash = 'unknown';
+            let commitMessage = '';
+            
+            if (hasUncommittedChanges) {
+                const { exec } = require('child_process');
+                const { promisify } = require('util');
+                const execAsync = promisify(exec);
+
                 try {
-                    await repository.add(changes.map((c: any) => c.uri.fsPath));
+                    // Stage all changes using git add -A (includes deletions, modifications, new files)
+                    await execAsync('git add -A', { cwd: workspaceFolder.uri.fsPath });
+                    logger.info('Staged all changes using git add -A');
                 } catch (addError: any) {
-                    throw new Error(`Failed to stage changes: ${addError.message}. Check that files exist and are not locked.`);
+                    throw new Error(`Failed to stage changes: ${addError.message}. Check that git is working properly.`);
                 }
+
+                progress.report({ increment: 10, message: 'Creating commit...' });
+
+                // Step 9: Verify git configuration before committing
+                try {
+                // Check git user.name
+                let userName: string | undefined;
+                let userEmail: string | undefined;
+
+                try {
+                    const { stdout: nameOutput } = await execAsync('git config user.name', { cwd: workspaceFolder.uri.fsPath });
+                    userName = nameOutput.trim();
+                } catch {
+                    // Try global config
+                    try {
+                        const { stdout: globalNameOutput } = await execAsync('git config --global user.name', { cwd: workspaceFolder.uri.fsPath });
+                        userName = globalNameOutput.trim();
+                    } catch {
+                        userName = undefined;
+                    }
+                }
+
+                try {
+                    const { stdout: emailOutput } = await execAsync('git config user.email', { cwd: workspaceFolder.uri.fsPath });
+                    userEmail = emailOutput.trim();
+                } catch {
+                    // Try global config
+                    try {
+                        const { stdout: globalEmailOutput } = await execAsync('git config --global user.email', { cwd: workspaceFolder.uri.fsPath });
+                        userEmail = globalEmailOutput.trim();
+                    } catch {
+                        userEmail = undefined;
+                    }
+                }
+
+                if (!userName || !userEmail) {
+                    const configAction = await vscode.window.showErrorMessage(
+                        `Git is not configured. Please set user.name and user.email.\n\nCurrent values:\nuser.name: ${userName || 'NOT SET'}\nuser.email: ${userEmail || 'NOT SET'}`,
+                        'Configure Git',
+                        'Cancel'
+                    );
+
+                    if (configAction === 'Configure Git') {
+                        const newUserName = await vscode.window.showInputBox({
+                            prompt: 'Enter your git user.name',
+                            value: userName || '',
+                            placeHolder: 'John Doe'
+                        });
+
+                        if (!newUserName) {
+                            vscode.window.showInformationMessage('Git configuration cancelled');
+                            return;
+                        }
+
+                        const newUserEmail = await vscode.window.showInputBox({
+                            prompt: 'Enter your git user.email',
+                            value: userEmail || '',
+                            placeHolder: 'john.doe@example.com'
+                        });
+
+                        if (!newUserEmail) {
+                            vscode.window.showInformationMessage('Git configuration cancelled');
+                            return;
+                        }
+
+                        // Configure git globally
+                        await execAsync(`git config --global user.name "${newUserName}"`, { cwd: workspaceFolder.uri.fsPath });
+                        await execAsync(`git config --global user.email "${newUserEmail}"`, { cwd: workspaceFolder.uri.fsPath });
+
+                        vscode.window.showInformationMessage(`Git configured with user.name="${newUserName}" and user.email="${newUserEmail}"`);
+                    } else {
+                        vscode.window.showInformationMessage('Completion cancelled');
+                        return;
+                    }
+                }
+            } catch (configError: any) {
+                logger.error(`Failed to verify git configuration: ${configError.message}`, configError);
+                // Continue anyway - might still work
             }
 
-            progress.report({ increment: 10, message: 'Creating commit...' });
-
-            // Step 9: Create commit
-            const commitMessage = await vscode.window.showInputBox({
+            // Step 9b: Create commit using git command directly (more reliable than VS Code API)
+            commitMessage = await vscode.window.showInputBox({
                 prompt: 'Enter commit message',
                 value: `${selectedIssueKey}: ${issue.summary}`,
                 validateInput: (value) => {
@@ -175,7 +255,7 @@ export async function completeJiraStory(
                     }
                     return null;
                 }
-            });
+            }) || '';
 
             if (!commitMessage) {
                 vscode.window.showInformationMessage('Completion cancelled');
@@ -183,9 +263,33 @@ export async function completeJiraStory(
             }
 
             try {
-                await repository.commit(commitMessage);
+                // Use git commit command directly - more reliable than VS Code Git API
+                const { exec } = require('child_process');
+                const { promisify } = require('util');
+                const execAsync = promisify(exec);
+                await execAsync(`git commit -m "${commitMessage.replace(/"/g, '\\"')}"`, { cwd: workspaceFolder.uri.fsPath });
+                logger.info(`Created commit: ${commitMessage}`);
+                
+                // Get the commit hash
+                const { stdout: hashOutput } = await execAsync('git rev-parse --short HEAD', { cwd: workspaceFolder.uri.fsPath });
+                commitHash = hashOutput.trim();
             } catch (commitError: any) {
-                throw new Error(`Failed to create commit: ${commitError.message}. Check that you have git configured (user.name and user.email).`);
+                throw new Error(`Failed to create commit: ${commitError.message}`);
+            }
+            } else {
+                // No uncommitted changes - get the latest commit hash
+                progress.report({ increment: 20, message: 'No new changes to commit...' });
+                try {
+                    const { exec } = require('child_process');
+                    const { promisify } = require('util');
+                    const execAsync = promisify(exec);
+                    const { stdout: hashOutput } = await execAsync('git rev-parse --short HEAD', { cwd: workspaceFolder.uri.fsPath });
+                    commitHash = hashOutput.trim();
+                    logger.info(`No uncommitted changes - using existing commit: ${commitHash}`);
+                } catch (hashError: any) {
+                    commitHash = 'unknown';
+                    logger.warn(`Could not get commit hash: ${hashError.message}`);
+                }
             }
 
             progress.report({ increment: 10, message: 'Pushing to remote...' });
@@ -226,15 +330,6 @@ export async function completeJiraStory(
                 } else {
                     vscode.window.showWarningMessage(`Push failed: ${pushError.message}. You may need to push manually.`);
                 }
-            }
-
-            // Get commit hash
-            let commitHash = 'unknown';
-            try {
-                const headCommit = await repository.getCommit('HEAD');
-                commitHash = headCommit.hash.substring(0, 8);
-            } catch (hashError: any) {
-                console.warn('Could not get commit hash:', hashError.message);
             }
 
             let prUrl = '';
@@ -283,6 +378,17 @@ export async function completeJiraStory(
             completionComment += `_Completed by DevEx AI Assistant_`;
 
             await jiraService.addComment(selectedIssueKey, completionComment);
+
+            // Add PR as remote link to Jira's Development section
+            if (prUrl && !prUrl.includes('manually')) {
+                progress.report({ message: 'Linking PR to Jira...' });
+                await jiraService.addRemoteLink(
+                    selectedIssueKey,
+                    prUrl,
+                    `PR: ${issue.summary}`,
+                    'Pull Request'
+                );
+            }
 
             // Step 14: Transition to DONE if requested
             // Note: transitionIssue has conversational error handling built-in

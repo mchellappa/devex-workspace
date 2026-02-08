@@ -71,6 +71,18 @@ export class TemplateProvider {
         return await fs.promises.readFile(templatePath, 'utf-8');
     }
 
+    getDotnetTemplatePath(templateName: string): string {
+        return path.join(this.extensionPath, 'templates', 'dotnet', templateName);
+    }
+
+    async readDotnetTemplate(templateName: string): Promise<string> {
+        const templatePath = this.getDotnetTemplatePath(templateName);
+        if (!fs.existsSync(templatePath)) {
+            throw new Error(`Template not found: ${templateName}`);
+        }
+        return await fs.promises.readFile(templatePath, 'utf-8');
+    }
+
     async copyDeploymentTemplates(targetDir: string): Promise<void> {
         const templates = await this.getDeploymentTemplates();
         

@@ -97,6 +97,10 @@ export class SpringBootGenerator {
             logger.info('Generating exception handler...');
             await this.generateExceptionHandler(projectPath, config);
 
+            // Generate security classes
+            logger.info('Generating security classes...');
+            await this.generateSecurityClasses(projectPath, config);
+
             // Generate test files
             logger.info('Generating test scaffolding...');
             await this.generateTestScaffolding(projectPath, config);
@@ -133,6 +137,7 @@ export class SpringBootGenerator {
             path.join(projectPath, 'src', 'main', 'java', packagePath, 'model', 'entity'),
             path.join(projectPath, 'src', 'main', 'java', packagePath, 'model', 'dto'),
             path.join(projectPath, 'src', 'main', 'java', packagePath, 'exception'),
+            path.join(projectPath, 'src', 'main', 'java', packagePath, 'security'),
             path.join(projectPath, 'src', 'main', 'java', packagePath, 'util'),
             path.join(projectPath, 'src', 'main', 'resources'),
             path.join(projectPath, 'src', 'test', 'java', packagePath)
@@ -239,6 +244,7 @@ export class SpringBootGenerator {
             await this.generateController(projectPath, config, resource, resourceEndpointsList);
             await this.generateService(projectPath, config, resource);
             await this.generateRepository(projectPath, config, resource);
+            await this.generateModelClasses(projectPath, config, resource);
         }
     }
 
@@ -321,14 +327,102 @@ export class SpringBootGenerator {
     private async generateExceptionHandler(projectPath: string, config: SpringBootProjectConfig): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         
-        const template = await this.templateProvider.readSpringBootTemplate('GlobalExceptionHandler.java.template');
-        const compiled = Handlebars.compile(template);
-        const content = compiled({
-            packageName: config.packageName
-        });
+        // Generate GlobalExceptionHandler
+        const handlerTemplate = await this.templateProvider.readSpringBootTemplate('GlobalExceptionHandler.java.template');
+        const handlerCompiled = Handlebars.compile(handlerTemplate);
+        const handlerContent = handlerCompiled({ packageName: config.packageName });
+        const handlerPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'exception', 'GlobalExceptionHandler.java');
+        await fs.promises.writeFile(handlerPath, handlerContent, 'utf-8');
+        
+        // Generate ApplicationException
+        const appExTemplate = await this.templateProvider.readSpringBootTemplate('ApplicationException.java.template');
+        const appExCompiled = Handlebars.compile(appExTemplate);
+        const appExContent = appExCompiled({ packageName: config.packageName });
+        const appExPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'exception', 'ApplicationException.java');
+        await fs.promises.writeFile(appExPath, appExContent, 'utf-8');
+        
+        // Generate ResourceNotFoundException
+        const notFoundTemplate = await this.templateProvider.readSpringBootTemplate('ResourceNotFoundException.java.template');
+        const notFoundCompiled = Handlebars.compile(notFoundTemplate);
+        const notFoundContent = notFoundCompiled({ packageName: config.packageName });
+        const notFoundPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'exception', 'ResourceNotFoundException.java');
+        await fs.promises.writeFile(notFoundPath, notFoundContent, 'utf-8');
+        
+        // Generate BusinessValidationException
+        const validationTemplate = await this.templateProvider.readSpringBootTemplate('BusinessValidationException.java.template');
+        const validationCompiled = Handlebars.compile(validationTemplate);
+        const validationContent = validationCompiled({ packageName: config.packageName });
+        const validationPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'exception', 'BusinessValidationException.java');
+        await fs.promises.writeFile(validationPath, validationContent, 'utf-8');
+    }
 
-        const filePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'exception', 'GlobalExceptionHandler.java');
-        await fs.promises.writeFile(filePath, content, 'utf-8');
+    private async generateSecurityClasses(projectPath: string, config: SpringBootProjectConfig): Promise<void> {
+        const packagePath = config.packageName.replace(/\./g, '/');
+        const securityPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'security');
+        await fs.promises.mkdir(securityPath, { recursive: true });
+        
+        // Generate JwtRequestFilter
+        const filterTemplate = await this.templateProvider.readSpringBootTemplate('JwtRequestFilter.java.template');
+        const filterCompiled = Handlebars.compile(filterTemplate);
+        const filterContent = filterCompiled({ packageName: config.packageName });
+        const filterPath = path.join(securityPath, 'JwtRequestFilter.java');
+        await fs.promises.writeFile(filterPath, filterContent, 'utf-8');
+        
+        // Generate JwtAuthenticationEntryPoint
+        const entryPointTemplate = await this.templateProvider.readSpringBootTemplate('JwtAuthenticationEntryPoint.java.template');
+        const entryPointCompiled = Handlebars.compile(entryPointTemplate);
+        const entryPointContent = entryPointCompiled({ packageName: config.packageName });
+        const entryPointPath = path.join(securityPath, 'JwtAuthenticationEntryPoint.java');
+        await fs.promises.writeFile(entryPointPath, entryPointContent, 'utf-8');
+        
+        // Generate JwtTokenUtil
+        const tokenUtilTemplate = await this.templateProvider.readSpringBootTemplate('JwtTokenUtil.java.template');
+        const tokenUtilCompiled = Handlebars.compile(tokenUtilTemplate);
+        const tokenUtilContent = tokenUtilCompiled({ packageName: config.packageName });
+        const tokenUtilPath = path.join(securityPath, 'JwtTokenUtil.java');
+        await fs.promises.writeFile(tokenUtilPath, tokenUtilContent, 'utf-8');
+        
+        // Generate SecurityConfig
+        const securityConfigTemplate = await this.templateProvider.readSpringBootTemplate('SecurityConfig.java.template');
+        const securityConfigCompiled = Handlebars.compile(securityConfigTemplate);
+        const securityConfigContent = securityConfigCompiled({ packageName: config.packageName });
+        const securityConfigPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'config', 'SecurityConfig.java');
+        await fs.promises.writeFile(securityConfigPath, securityConfigContent, 'utf-8');
+    }
+
+    private async generateModelClasses(projectPath: string, config: SpringBootProjectConfig, resource: string): Promise<void> {
+        const packagePath = config.packageName.replace(/\./g, '/');
+        
+        // Generate Request DTO
+        const requestTemplate = await this.templateProvider.readSpringBootTemplate('RequestDto.java.template');
+        const requestCompiled = Handlebars.compile(requestTemplate);
+        const requestContent = requestCompiled({
+            packageName: config.packageName,
+            className: this.toPascalCase(resource) + 'Request',
+            resourceName: resource,
+            fields: [
+                { name: 'name', type: 'String', required: true, isString: true },
+                { name: 'description', type: 'String', required: false, isString: true },
+                { name: 'status', type: 'String', required: false, isString: true }
+            ]
+        });
+        const requestPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'model', 'dto', `${this.toPascalCase(resource)}Request.java`);
+        await fs.promises.writeFile(requestPath, requestContent, 'utf-8');
+        
+        // Generate Response DTO
+        const responseTemplate = await this.templateProvider.readSpringBootTemplate('ResponseDto.java.template');
+        const responseCompiled = Handlebars.compile(responseTemplate);
+        const responseContent = responseCompiled({
+            packageName: config.packageName,
+            className: this.toPascalCase(resource) + 'Response',
+            resourceName: resource,
+            fields: [
+                { name: 'name', type: 'String' },
+                { name: 'description', type: 'String' }
+            ]
+        });
+        const responsePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'model', 'dto', `${this.toPascalCase(resource)}Response.java`);
+        await fs.promises.writeFile(responsePath, responseContent, 'utf-8');
     }
 
     private async generateTestScaffolding(projectPath: string, config: SpringBootProjectConfig): Promise<void> {

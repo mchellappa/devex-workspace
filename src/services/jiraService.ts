@@ -612,6 +612,63 @@ export class JiraService {
     }
 
     /**
+     * Add a remote link (PR, commit, etc.) to a Jira issue
+     * This appears in Jira's Development section
+     */
+    async addRemoteLink(issueKey: string, url: string, title: string, relationship: 'Pull Request' | 'Commit' | 'Branch' = 'Pull Request'): Promise<void> {
+        if (!this.config) {
+            const initialized = await this.initialize();
+            if (!initialized) {
+                throw new Error('Jira configuration is required');
+            }
+        }
+
+        try {
+            logger.info(`Adding remote link to Jira issue ${issueKey}: ${url}`);
+
+            const apiUrl = `${this.config!.baseUrl}/rest/api/3/issue/${issueKey}/remotelink`;
+            const auth = Buffer.from(`${this.config!.email}:${this.config!.apiToken}`).toString('base64');
+
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    object: {
+                        url: url,
+                        title: title,
+                        icon: {
+                            url16x16: relationship === 'Pull Request' 
+                                ? 'https://github.githubassets.com/favicons/favicon.png'
+                                : 'https://github.githubassets.com/favicons/favicon-dark.png'
+                        },
+                        status: {
+                            resolved: false
+                        }
+                    },
+                    relationship: relationship
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                logger.error(`Add remote link failed: ${response.status} ${response.statusText}\nResponse: ${errorText}`);
+                throw new Error(`Failed to add remote link: ${response.status} ${response.statusText}`);
+            }
+
+            logger.info(`Successfully added remote link to ${issueKey}`);
+
+        } catch (error: any) {
+            logger.error(`Failed to add remote link to ${issueKey}: ${error.message}`);
+            // Don't throw - this is a nice-to-have feature
+            logger.warn('Continuing without remote link');
+        }
+    }
+
+    /**
      * Prompt user to enter Jira issue key
      */
     async promptForIssueKey(): Promise<string | undefined> {
