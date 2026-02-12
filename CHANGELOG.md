@@ -5,6 +5,74 @@ All notable changes to the DevEx AI Assistant extension will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-02-11
+
+### Added
+- **Lucidchart Diagram Analysis**: `analyzeJiraTicket` now analyzes architecture diagrams from Jira
+  - Fetches Jira comments to detect Lucidchart/diagram links
+  - Fetches and downloads image attachments from Jira
+  - Uses GPT-4 Vision to analyze diagrams (architecture, ERDs, flow charts)
+  - Extracts: Components, data flows, tech stacks, integration points, dependencies
+  - Enhances service detection with diagram insights
+  - Includes diagram analysis in multi-repo plans and TODO lists
+  - Helpful notifications when Lucidchart links found (guides user to export)
+  - Automatic detection of diagram-related attachments (lucid, diagram, architecture, flow)
+
+### New Jira Service Methods
+- `fetchComments(issueKey)` - Retrieves all comments from a Jira issue
+- `fetchAttachments(issueKey)` - Gets attachment metadata (filename, type, size, URL)
+- `downloadAttachment(attachment)` - Downloads image attachments as Buffer
+
+### Changed
+- `analyzeJiraTicket` now fetches comments and attachments before analysis
+- Service detection enhanced with diagram context (AI sees architecture diagrams)
+- Multi-repo plans include "📊 Architecture Diagram Analysis" section
+- Single-repo TODOs enriched with diagram insights
+
+### Technical Details
+- New interfaces: `JiraComment`, `JiraAttachment` in JiraService
+- New helper: `detectDiagramLinks()` - Regex patterns for Lucid/diagram URLs
+- New helper: `analyzeDiagramsFromJira()` - Downloads and analyzes with vision AI
+- Leverages existing `imageAnalyzer.ts` with 'architecture' context
+- Pattern detection: lucid.app, lucidchart.com, *diagram*, *architecture*
+- MIME type filtering: image/png, image/jpg, image/jpeg
+- Handles real-world scenarios like SWIFT-74388 (diagrams in comments)
+
+## [1.4.0] - 2026-02-11
+
+### Added
+- **Multi-Repo Story Planning**: Enhanced `analyzeJiraTicket` command to detect and plan stories spanning multiple repositories
+  - AI-powered service detection identifies all affected services/components
+  - Interactive repository mapping questionnaire (asks user for repo URLs)
+  - `.devex` knowledge folder stores service→repo mappings for future reuse
+  - Learning system: Suggests from history, gets smarter over time
+  - Generates comprehensive multi-repo plans with:
+    - Repository URLs and tech stacks
+    - Implementation phases (parallel vs sequential)
+    - Service dependencies and order
+    - Suggested Jira subtasks
+    - Risk analysis and coordination points
+  - Auto-saves plans to `.devex/story-plans/`
+  - Supports Azure DevOps, GitHub, or any git provider
+  - Works without API access (user-driven configuration)
+  - Team knowledge sharing via committed `.devex` folder
+
+### Changed
+- `analyzeJiraTicket` now branches between single-repo TODO lists and multi-repo plans based on AI detection
+- Analysis output dynamically adjusts: Simple TODO for single repos, detailed plan for multi-repos
+- Improved telemetry tracking for multi-repo scenarios
+
+### Technical Details
+- New interfaces: `AffectedService`, `RepoMapping`, `DevExConfig`
+- New functions:
+  - `detectAffectedServices()` - AI-powered service detection
+  - `mapRepositories()` - Interactive questionnaire with knowledge storage
+  - `generateMultiRepoAnalysis()` - Multi-repo plan generation with phases
+  - `generateMultiRepoPlan()` - Markdown formatter for multi-repo plans
+  - `generateSingleRepoPlan()` - Refactored single-repo TODO formatter
+- Git remote auto-detection for current workspace suggestions
+- File system operations for `.devex` folder management
+
 ## [1.3.51] - 2026-02-06
 
 ### Added

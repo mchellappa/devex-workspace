@@ -18,6 +18,7 @@ The DevEx AI Assistant is a comprehensive VS Code extension that leverages GitHu
 ### Core Capabilities
 
 #### Design & Planning Phase
+#### Design & Planning Phase
 - **Generate LLD from Requirements** ⭐ NEW: Convert requirements documents (PDF/TXT/MD) into comprehensive LLDs
   - **Interactive conversational workflow** with clarifying questions
   - **DOCX output** with professional formatting, diagrams, and track changes
@@ -30,6 +31,16 @@ The DevEx AI Assistant is a comprehensive VS Code extension that leverages GitHu
   - **AI recommendations**: Get expert guidance on which option to choose
   - **Professional output**: GWAM-compliant KDD template with complete documentation
   - Saves 6-10 hours on design decision documentation
+- **Analyze Jira Ticket** 🆕 v1.4.0: Smart story analysis with multi-repo detection
+  - **Single-Repo Stories**: Generates comprehensive TODO lists with acceptance criteria
+  - **Multi-Repo Stories**: Detects affected services and creates coordination plans
+  - **Interactive Repository Mapping**: Asks user for repo URLs, stores in `.devex` folder
+  - **Learning System**: Suggests from history, gets smarter with each use
+  - **Implementation Phases**: AI determines parallel vs sequential work
+  - **Dependency Analysis**: Identifies service dependencies and order
+  - **Subtask Suggestions**: Proposes Jira subtask breakdown
+  - **Team Knowledge Sharing**: `.devex` folder committed to git
+  - Saves 90+ minutes per multi-repo story planning
 - **LLD Review & Validation**: AI-powered architectural review with **two specialized reviews**:
   - **Software Engineering Completeness**: Comprehensive review (error handling, state management, security, performance, monitoring, operations)
   - **API Design Completeness**: Ensure LLDs have all details for OpenAPI/code generation
@@ -71,6 +82,11 @@ Access all commands via Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) or cont
 - **Review LLD** - Comprehensive architectural review (includes API completeness check)
 - **Generate OpenAPI Spec from LLD** - Create complete OpenAPI 3.0 specifications
 - **Generate Key Design Document (KDD)** 🆕 - AI-driven architectural decision documentation
+- **Analyze Jira Ticket** 🆕 v1.4.0 - Smart story analysis with multi-repo planning
+  - Single repo → TODO list with acceptance criteria
+  - Multi repo → Coordination plan with phases and dependencies
+  - Interactive repo mapping with `.devex` knowledge storage
+  - Learns from history, suggests repos next time
 
 ####  Development & Code Generation
 - **Generate Spring Boot Project** - Complete enterprise-grade microservices

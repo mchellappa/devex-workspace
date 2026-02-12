@@ -14,6 +14,24 @@ export interface JiraIssue {
     customFields?: Record<string, any>;
 }
 
+export interface JiraComment {
+    id: string;
+    body: string;
+    author: string;
+    created: string;
+    updated: string;
+}
+
+export interface JiraAttachment {
+    id: string;
+    filename: string;
+    mimeType: string;
+    size: number;
+    content: string; // URL to download
+    created: string;
+    author: string;
+}
+
 export interface JiraConfig {
     baseUrl: string;
     email: string;
@@ -608,6 +626,156 @@ export class JiraService {
         } catch (error: any) {
             logger.error(`Failed to add comment to ${issueKey}: ${error.message}`);
             throw error;
+        }
+    }
+
+    /**
+     * Fetch all comments from a Jira issue
+     */
+    async fetchComments(issueKey: string): Promise<JiraComment[]> {
+        if (!this.config) {
+            const initialized = await this.initialize();
+            if (!initialized) {
+                throw new Error('Jira configuration is required');
+            }
+        }
+
+        try {
+            logger.info(`Fetching comments for Jira issue: ${issueKey}`);
+
+            const url = `${this.config!.baseUrl}/rest/api/3/issue/${issueKey}/comment`;
+            const auth = Buffer.from(`${this.config!.email}:${this.config!.apiToken}`).toString('base64');
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                logger.error(`Fetch comments failed: ${response.status} ${response.statusText}`);
+                return [];
+            }
+
+            const data = await response.json() as any;
+            const comments: JiraComment[] = [];
+
+            if (data.comments && Array.isArray(data.comments)) {
+                for (const comment of data.comments) {
+                    comments.push({
+                        id: comment.id,
+                        body: this.extractTextFromADF(comment.body),
+                        author: comment.author?.displayName || 'Unknown',
+                        created: comment.created,
+                        updated: comment.updated
+                    });
+                }
+            }
+
+            logger.info(`Successfully fetched ${comments.length} comments from ${issueKey}`);
+            return comments;
+
+        } catch (error: any) {
+            logger.error(`Failed to fetch comments from ${issueKey}: ${error.message}`);
+            return [];
+        }
+    }
+
+    /**
+     * Fetch attachments metadata from a Jira issue
+     */
+    async fetchAttachments(issueKey: string): Promise<JiraAttachment[]> {
+        if (!this.config) {
+            const initialized = await this.initialize();
+            if (!initialized) {
+                throw new Error('Jira configuration is required');
+            }
+        }
+
+        try {
+            logger.info(`Fetching attachments for Jira issue: ${issueKey}`);
+
+            const url = `${this.config!.baseUrl}/rest/api/2/issue/${issueKey}`;
+            const auth = Buffer.from(`${this.config!.email}:${this.config!.apiToken}`).toString('base64');
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                logger.error(`Fetch attachments failed: ${response.status} ${response.statusText}`);
+                return [];
+            }
+
+            const data = await response.json() as any;
+            const attachments: JiraAttachment[] = [];
+
+            if (data.fields.attachment && Array.isArray(data.fields.attachment)) {
+                for (const attachment of data.fields.attachment) {
+                    attachments.push({
+                        id: attachment.id,
+                        filename: attachment.filename,
+                        mimeType: attachment.mimeType,
+                        size: attachment.size,
+                        content: attachment.content,
+                        created: attachment.created,
+                        author: attachment.author?.displayName || 'Unknown'
+                    });
+                }
+            }
+
+            logger.info(`Successfully fetched ${attachments.length} attachments from ${issueKey}`);
+            return attachments;
+
+        } catch (error: any) {
+            logger.error(`Failed to fetch attachments from ${issueKey}: ${error.message}`);
+            return [];
+        }
+    }
+
+    /**
+     * Download an image attachment from Jira
+     */
+    async downloadAttachment(attachment: JiraAttachment): Promise<Buffer | null> {
+        if (!this.config) {
+            const initialized = await this.initialize();
+            if (!initialized) {
+                throw new Error('Jira configuration is required');
+            }
+        }
+
+        try {
+            logger.info(`Downloading attachment: ${attachment.filename}`);
+
+            const auth = Buffer.from(`${this.config!.email}:${this.config!.apiToken}`).toString('base64');
+
+            const response = await fetch(attachment.content, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Basic ${auth}`
+                }
+            });
+
+            if (!response.ok) {
+                logger.error(`Download attachment failed: ${response.status} ${response.statusText}`);
+                return null;
+            }
+
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+
+            logger.info(`Successfully downloaded ${attachment.filename} (${buffer.length} bytes)`);
+            return buffer;
+
+        } catch (error: any) {
+            logger.error(`Failed to download attachment ${attachment.filename}: ${error.message}`);
+            return null;
         }
     }
 
