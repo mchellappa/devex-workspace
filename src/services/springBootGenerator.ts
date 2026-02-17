@@ -37,6 +37,30 @@ Handlebars.registerHelper('or', function(a: any, b: any) {
     return a || b;
 });
 
+Handlebars.registerHelper('camelCase', function(str: any) {
+    if (!str || typeof str !== 'string') {
+        return '';
+    }
+    return str.charAt(0).toLowerCase() + str.slice(1);
+});
+
+Handlebars.registerHelper('pascalCase', function(str: any) {
+    if (!str || typeof str !== 'string') {
+        return '';
+    }
+    return str.charAt(0).toUpperCase() + str.slice(1);
+});
+
+// Helper for proper HTTP method annotation capitalization
+// GET -> GetMapping, POST -> PostMapping, etc.
+Handlebars.registerHelper('methodMapping', function(method: string) {
+    if (!method) {
+        return 'GetMapping';
+    }
+    const normalized = method.toLowerCase();
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1) + 'Mapping';
+});
+
 export interface SpringBootProjectConfig {
     projectName: string;
     packageName: string;
@@ -64,11 +88,16 @@ export class SpringBootGenerator {
         this.templateProvider = templateProvider;
     }
 
-    async generateProject(config: SpringBootProjectConfig, openApiEndpoints: OpenAPIEndpoint[]): Promise<void> {
+    async generateProject(
+        config: SpringBootProjectConfig, 
+        openApiEndpoints: OpenAPIEndpoint[],
+        schemas: Record<string, any> = {}
+    ): Promise<void> {
         const projectPath = path.join(config.targetDirectory, config.projectName);
 
         try {
             logger.info(`Starting Spring Boot project generation at: ${projectPath}`);
+            logger.info(`Using ${Object.keys(schemas).length} schemas from OpenAPI spec`);
 
             // Create project directory structure
             logger.info('Creating directory structure...');
@@ -87,7 +116,7 @@ export class SpringBootGenerator {
 
             // Generate controllers, services, repositories from OpenAPI
             logger.info('Generating controllers, services, and repositories...');
-            await this.generateControllersFromOpenAPI(projectPath, config, openApiEndpoints);
+            const resources = await this.generateControllersFromOpenAPI(projectPath, config, openApiEndpoints, schemas);
 
             // Generate configuration classes
             logger.info('Generating configuration classes...');
@@ -103,7 +132,7 @@ export class SpringBootGenerator {
 
             // Generate test files
             logger.info('Generating test scaffolding...');
-            await this.generateTestScaffolding(projectPath, config);
+            await this.generateTestScaffolding(projectPath, config, resources);
 
             // Generate README
             logger.info('Generating README...');
@@ -134,8 +163,8 @@ export class SpringBootGenerator {
             path.join(projectPath, 'src', 'main', 'java', packagePath, 'controller'),
             path.join(projectPath, 'src', 'main', 'java', packagePath, 'service'),
             path.join(projectPath, 'src', 'main', 'java', packagePath, 'repository'),
-            path.join(projectPath, 'src', 'main', 'java', packagePath, 'model', 'entity'),
-            path.join(projectPath, 'src', 'main', 'java', packagePath, 'model', 'dto'),
+            path.join(projectPath, 'src', 'main', 'java', packagePath, 'entity'),
+            path.join(projectPath, 'src', 'main', 'java', packagePath, 'dto'),
             path.join(projectPath, 'src', 'main', 'java', packagePath, 'exception'),
             path.join(projectPath, 'src', 'main', 'java', packagePath, 'security'),
             path.join(projectPath, 'src', 'main', 'java', packagePath, 'util'),
@@ -216,7 +245,8 @@ export class SpringBootGenerator {
         const compiled = Handlebars.compile(template);
         const content = compiled({
             projectName: config.projectName,
-            artifactId: config.artifactId
+            artifactId: config.artifactId,
+            packageName: config.packageName
         });
 
         const filePath = path.join(projectPath, 'src', 'main', 'resources', 'application.yml');
@@ -226,8 +256,9 @@ export class SpringBootGenerator {
     private async generateControllersFromOpenAPI(
         projectPath: string,
         config: SpringBootProjectConfig,
-        endpoints: OpenAPIEndpoint[]
-    ): Promise<void> {
+        endpoints: OpenAPIEndpoint[],
+        schemas: Record<string, any>
+    ): Promise<string[]> {
         // Group endpoints by resource
         const resourceEndpoints: Record<string, OpenAPIEndpoint[]> = {};
         
@@ -240,12 +271,19 @@ export class SpringBootGenerator {
         });
 
         // Generate controller for each resource
+        const resources = Object.keys(resourceEndpoints);
         for (const [resource, resourceEndpointsList] of Object.entries(resourceEndpoints)) {
             await this.generateController(projectPath, config, resource, resourceEndpointsList);
             await this.generateService(projectPath, config, resource);
             await this.generateRepository(projectPath, config, resource);
-            await this.generateModelClasses(projectPath, config, resource);
+            await this.generateMapper(projectPath, config, resource);
+            
+            // Find matching schema for this resource
+            const resourceSchema = this.findSchemaForResource(resource, schemas);
+            await this.generateModelClasses(projectPath, config, resource, resourceSchema);
         }
+        
+        return resources;
     }
 
     private async generateController(
@@ -256,14 +294,16 @@ export class SpringBootGenerator {
     ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Controller';
+        const entityName = this.toPascalCase(resource);
         
         const template = await this.templateProvider.readSpringBootTemplate('Controller.java.template');
         const compiled = Handlebars.compile(template);
         const content = compiled({
             packageName: config.packageName,
             className,
+            entityName: entityName,
             resourceName: resource,
-            serviceName: this.toPascalCase(resource) + 'Service',
+            serviceName: entityName + 'Service',
             endpoints: endpoints.map(e => ({
                 method: e.method.toUpperCase(),
                 path: e.path,
@@ -273,23 +313,27 @@ export class SpringBootGenerator {
         });
 
         const filePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'controller', `${className}.java`);
+        await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
         await fs.promises.writeFile(filePath, content, 'utf-8');
     }
 
     private async generateService(projectPath: string, config: SpringBootProjectConfig, resource: string): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Service';
+        const entityName = this.toPascalCase(resource);
         
         const template = await this.templateProvider.readSpringBootTemplate('Service.java.template');
         const compiled = Handlebars.compile(template);
         const content = compiled({
             packageName: config.packageName,
             className,
+            entityName: entityName,
             resourceName: resource,
-            repositoryName: this.toPascalCase(resource) + 'Repository'
+            repositoryName: entityName + 'Repository'
         });
 
         const filePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'service', `${className}.java`);
+        await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
         await fs.promises.writeFile(filePath, content, 'utf-8');
     }
 
@@ -307,6 +351,31 @@ export class SpringBootGenerator {
         });
 
         const filePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'repository', `${className}.java`);
+        await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.promises.writeFile(filePath, content, 'utf-8');
+    }
+
+    private async generateMapper(projectPath: string, config: SpringBootProjectConfig, resource: string): Promise<void> {
+        const packagePath = config.packageName.replace(/\./g, '/');
+        const entityName = this.toPascalCase(resource);
+        const className = entityName + 'Mapper';
+        
+        const template = await this.templateProvider.readSpringBootTemplate('Mapper.java.template');
+        const compiled = Handlebars.compile(template);
+        const content = compiled({
+            packageName: config.packageName,
+            className,
+            entityName,
+            resourceName: resource
+        });
+
+        // Create mapper directory if it doesn't exist
+        const mapperDir = path.join(projectPath, 'src', 'main', 'java', packagePath, 'mapper');
+        if (!fs.existsSync(mapperDir)) {
+            fs.mkdirSync(mapperDir, { recursive: true });
+        }
+
+        const filePath = path.join(mapperDir, `${className}.java`);
         await fs.promises.writeFile(filePath, content, 'utf-8');
     }
 
@@ -321,6 +390,7 @@ export class SpringBootGenerator {
         });
 
         const filePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'config', 'OpenApiConfig.java');
+        await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
         await fs.promises.writeFile(filePath, content, 'utf-8');
     }
 
@@ -332,6 +402,7 @@ export class SpringBootGenerator {
         const handlerCompiled = Handlebars.compile(handlerTemplate);
         const handlerContent = handlerCompiled({ packageName: config.packageName });
         const handlerPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'exception', 'GlobalExceptionHandler.java');
+        await fs.promises.mkdir(path.dirname(handlerPath), { recursive: true });
         await fs.promises.writeFile(handlerPath, handlerContent, 'utf-8');
         
         // Generate ApplicationException
@@ -358,55 +429,76 @@ export class SpringBootGenerator {
 
     private async generateSecurityClasses(projectPath: string, config: SpringBootProjectConfig): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
-        const securityPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'security');
-        await fs.promises.mkdir(securityPath, { recursive: true });
         
-        // Generate JwtRequestFilter
-        const filterTemplate = await this.templateProvider.readSpringBootTemplate('JwtRequestFilter.java.template');
-        const filterCompiled = Handlebars.compile(filterTemplate);
-        const filterContent = filterCompiled({ packageName: config.packageName });
-        const filterPath = path.join(securityPath, 'JwtRequestFilter.java');
-        await fs.promises.writeFile(filterPath, filterContent, 'utf-8');
-        
-        // Generate JwtAuthenticationEntryPoint
-        const entryPointTemplate = await this.templateProvider.readSpringBootTemplate('JwtAuthenticationEntryPoint.java.template');
-        const entryPointCompiled = Handlebars.compile(entryPointTemplate);
-        const entryPointContent = entryPointCompiled({ packageName: config.packageName });
-        const entryPointPath = path.join(securityPath, 'JwtAuthenticationEntryPoint.java');
-        await fs.promises.writeFile(entryPointPath, entryPointContent, 'utf-8');
-        
-        // Generate JwtTokenUtil
-        const tokenUtilTemplate = await this.templateProvider.readSpringBootTemplate('JwtTokenUtil.java.template');
-        const tokenUtilCompiled = Handlebars.compile(tokenUtilTemplate);
-        const tokenUtilContent = tokenUtilCompiled({ packageName: config.packageName });
-        const tokenUtilPath = path.join(securityPath, 'JwtTokenUtil.java');
-        await fs.promises.writeFile(tokenUtilPath, tokenUtilContent, 'utf-8');
-        
-        // Generate SecurityConfig
+        // Generate SecurityConfig (simplified for APIM-backed deployment)
         const securityConfigTemplate = await this.templateProvider.readSpringBootTemplate('SecurityConfig.java.template');
         const securityConfigCompiled = Handlebars.compile(securityConfigTemplate);
         const securityConfigContent = securityConfigCompiled({ packageName: config.packageName });
         const securityConfigPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'config', 'SecurityConfig.java');
         await fs.promises.writeFile(securityConfigPath, securityConfigContent, 'utf-8');
+        
+        // NOTE: JWT-related classes (JwtTokenUtil, JwtRequestFilter, CustomUserDetailsService) 
+        // are NOT generated by default since APIM handles authentication.
+        // If you need JWT authentication, add these classes manually or use a custom template.
     }
 
-    private async generateModelClasses(projectPath: string, config: SpringBootProjectConfig, resource: string): Promise<void> {
+    private async generateModelClasses(
+        projectPath: string, 
+        config: SpringBootProjectConfig, 
+        resource: string,
+        schema?: any
+    ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
+        const entityName = this.toPascalCase(resource);
+        
+        // Validate entityName is not empty
+        if (!entityName || entityName.trim() === '') {
+            logger.error(`Failed to generate entity name from resource: "${resource}"`);
+            throw new Error(`Invalid resource name: "${resource}" - cannot generate entity`);
+        }
+        
+        logger.info(`Generating model classes for resource: "${resource}" -> entityName: "${entityName}"`);
+        
+        // Use schema fields if available, otherwise use default fields
+        let fields: any[];
+        if (schema && schema.fields && schema.fields.length > 0) {
+            fields = schema.fields;
+            logger.info(`Using ${fields.length} fields from OpenAPI schema for ${entityName}`);
+        } else {
+            // Fallback to default fields if no schema found
+            fields = [
+                { name: 'name', type: 'String', required: true, isString: true },
+                { name: 'description', type: 'String', required: false, isString: true },
+                { name: 'status', type: 'String', required: false, isString: true }
+            ];
+            logger.warn(`No schema found for ${entityName}, using default fields`);
+        }
+        
+        // Generate Entity
+        const entityTemplate = await this.templateProvider.readSpringBootTemplate('Entity.java.template');
+        const entityCompiled = Handlebars.compile(entityTemplate);
+        const entityContent = entityCompiled({
+            packageName: config.packageName,
+            className: entityName,
+            tableName: resource.toLowerCase(),
+            resourceName: resource,
+            fields
+        });
+        const entityPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'entity', `${entityName}.java`);
+        await fs.promises.mkdir(path.dirname(entityPath), { recursive: true });
+        await fs.promises.writeFile(entityPath, entityContent, 'utf-8');
         
         // Generate Request DTO
         const requestTemplate = await this.templateProvider.readSpringBootTemplate('RequestDto.java.template');
         const requestCompiled = Handlebars.compile(requestTemplate);
         const requestContent = requestCompiled({
             packageName: config.packageName,
-            className: this.toPascalCase(resource) + 'Request',
+            className: entityName + 'Request',
             resourceName: resource,
-            fields: [
-                { name: 'name', type: 'String', required: true, isString: true },
-                { name: 'description', type: 'String', required: false, isString: true },
-                { name: 'status', type: 'String', required: false, isString: true }
-            ]
+            fields
         });
-        const requestPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'model', 'dto', `${this.toPascalCase(resource)}Request.java`);
+        const requestPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'dto', `${entityName}Request.java`);
+        await fs.promises.mkdir(path.dirname(requestPath), { recursive: true });
         await fs.promises.writeFile(requestPath, requestContent, 'utf-8');
         
         // Generate Response DTO
@@ -414,30 +506,112 @@ export class SpringBootGenerator {
         const responseCompiled = Handlebars.compile(responseTemplate);
         const responseContent = responseCompiled({
             packageName: config.packageName,
-            className: this.toPascalCase(resource) + 'Response',
+            className: entityName + 'Response',
             resourceName: resource,
-            fields: [
-                { name: 'name', type: 'String' },
-                { name: 'description', type: 'String' }
-            ]
+            fields
         });
-        const responsePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'model', 'dto', `${this.toPascalCase(resource)}Response.java`);
+        const responsePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'dto', `${entityName}Response.java`);
+        await fs.promises.mkdir(path.dirname(responsePath), { recursive: true });
         await fs.promises.writeFile(responsePath, responseContent, 'utf-8');
     }
 
-    private async generateTestScaffolding(projectPath: string, config: SpringBootProjectConfig): Promise<void> {
+    /**
+     * Find matching schema for a resource name
+     * Tries to match by singular/plural forms
+     */
+    private findSchemaForResource(resource: string, schemas: Record<string, any>): any | undefined {
+        if (!resource || Object.keys(schemas).length === 0) {
+            return undefined;
+        }
+
+        const resourceLower = resource.toLowerCase();
+        const resourcePascal = this.toPascalCase(resource);
+
+        // Try exact match first (case-insensitive)
+        for (const [schemaName, schema] of Object.entries(schemas)) {
+            if (schemaName.toLowerCase() === resourceLower) {
+                logger.info(`Found exact schema match: ${schemaName} for resource ${resource}`);
+                return schema;
+            }
+        }
+
+        // Try PascalCase match
+        if (schemas[resourcePascal]) {
+            logger.info(`Found PascalCase schema match: ${resourcePascal} for resource ${resource}`);
+            return schemas[resourcePascal];
+        }
+
+        // Try singular/plural variations
+        const singular = this.toSingular(resourceLower);
+        const plural = this.toPlural(resourceLower);
+
+        for (const [schemaName, schema] of Object.entries(schemas)) {
+            const schemaLower = schemaName.toLowerCase();
+            if (schemaLower === singular || schemaLower === plural) {
+                logger.info(`Found singular/plural schema match: ${schemaName} for resource ${resource}`);
+                return schema;
+            }
+        }
+
+        logger.warn(`No schema found for resource: ${resource}`);
+        return undefined;
+    }
+
+    /**
+     * Simple singularization - handles common cases
+     */
+    private toSingular(word: string): string {
+        if (word.endsWith('ies')) {
+            return word.slice(0, -3) + 'y';
+        }
+        if (word.endsWith('ses') || word.endsWith('ches') || word.endsWith('shes') || word.endsWith('xes')) {
+            return word.slice(0, -2);
+        }
+        if (word.endsWith('s') && !word.endsWith('ss')) {
+            return word.slice(0, -1);
+        }
+        return word;
+    }
+
+    /**
+     * Simple pluralization - handles common cases
+     */
+    private toPlural(word: string): string {
+        if (word.endsWith('y') && !this.isVowel(word.charAt(word.length - 2))) {
+            return word.slice(0, -1) + 'ies';
+        }
+        if (word.endsWith('s') || word.endsWith('ch') || word.endsWith('sh') || word.endsWith('x')) {
+            return word + 'es';
+        }
+        return word + 's';
+    }
+
+    /**
+     * Check if character is a vowel
+     */
+    private isVowel(char: string): boolean {
+        return 'aeiouAEIOU'.includes(char);
+    }
+
+    private async generateTestScaffolding(projectPath: string, config: SpringBootProjectConfig, resources: string[]): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
-        const className = this.toPascalCase(config.artifactId) + 'ApplicationTests';
         
+        // Generate ApplicationTests
+        const className = this.toPascalCase(config.artifactId) + 'ApplicationTests';
         const template = await this.templateProvider.readSpringBootTemplate('ApplicationTests.java.template');
         const compiled = Handlebars.compile(template);
         const content = compiled({
             packageName: config.packageName,
             className
         });
-
         const filePath = path.join(projectPath, 'src', 'test', 'java', packagePath, `${className}.java`);
         await fs.promises.writeFile(filePath, content, 'utf-8');
+        
+        // Generate Controller and Service tests for each resource
+        for (const resource of resources) {
+            await this.generateControllerTest(projectPath, config, resource);
+            await this.generateServiceTest(projectPath, config, resource);
+        }
     }
 
     private async generateReadme(projectPath: string, config: SpringBootProjectConfig): Promise<void> {
@@ -459,18 +633,108 @@ export class SpringBootGenerator {
         await fs.promises.writeFile(path.join(projectPath, '.gitignore'), template, 'utf-8');
     }
 
+    private async generateControllerTest(projectPath: string, config: SpringBootProjectConfig, resource: string): Promise<void> {
+        const packagePath = config.packageName.replace(/\./g, '/');
+        const entityName = this.toPascalCase(resource);
+        const className = entityName + 'ControllerTest';
+        
+        const template = await this.templateProvider.readSpringBootTemplate('ControllerTest.java.template');
+        const compiled = Handlebars.compile(template);
+        const content = compiled({
+            packageName: config.packageName,
+            className,
+            controllerClassName: entityName + 'Controller',
+            entityName: entityName,
+            resourceName: resource,
+            serviceName: entityName + 'Service',
+            fields: [
+                { name: 'name', type: 'String' },
+                { name: 'description', type: 'String' }
+            ]
+        });
+
+        const testDir = path.join(projectPath, 'src', 'test', 'java', packagePath, 'controller');
+        await fs.promises.mkdir(testDir, { recursive: true });
+        const filePath = path.join(testDir, `${className}.java`);
+        await fs.promises.writeFile(filePath, content, 'utf-8');
+    }
+
+    private async generateServiceTest(projectPath: string, config: SpringBootProjectConfig, resource: string): Promise<void> {
+        const packagePath = config.packageName.replace(/\./g, '/');
+        const entityName = this.toPascalCase(resource);
+        const className = entityName + 'ServiceTest';
+        
+        const template = await this.templateProvider.readSpringBootTemplate('ServiceTest.java.template');
+        const compiled = Handlebars.compile(template);
+        const content = compiled({
+            packageName: config.packageName,
+            className,
+            serviceName: entityName + 'Service',
+            entityName: entityName,
+            resourceName: resource,
+            repositoryName: entityName + 'Repository',
+            fields: [
+                { name: 'name', type: 'String' },
+                { name: 'description', type: 'String' }
+            ]
+        });
+
+        const testDir = path.join(projectPath, 'src', 'test', 'java', packagePath, 'service');
+        await fs.promises.mkdir(testDir, { recursive: true });
+        const filePath = path.join(testDir, `${className}.java`);
+        await fs.promises.writeFile(filePath, content, 'utf-8');
+    }
+
     // Utility methods
     private extractResourceName(path: string): string {
+        if (!path) {
+            logger.warn('extractResourceName called with empty path, using default "api"');
+            return 'api';
+        }
+        
+        // Remove leading/trailing slashes and split by /
         const parts = path.split('/').filter(p => p && !p.startsWith('{'));
-        return parts[0] || 'api';
+        
+        if (parts.length === 0) {
+            logger.warn(`No valid path parts found in "${path}", using default "api"`);
+            return 'api';
+        }
+        
+        // Skip common prefixes like 'api', 'v1', 'v2', etc.
+        const filtered = parts.filter(p => !p.match(/^(api|v\d+)$/i));
+        
+        // Return the first non-filtered part, or fall back to first part
+        const result = filtered[0] || parts[0] || 'api';
+        logger.debug(`Extracted resource name from path "${path}": "${result}"`);
+        return result;
     }
 
     private toPascalCase(str: string): string {
-        return str.replace(/(^\w|-\w|_\w)/g, (match) => match.replace(/-|_/, '').toUpperCase());
+        if (!str || typeof str !== 'string' || str.trim() === '') {
+            logger.error(`toPascalCase called with invalid input: "${str}"`);
+            return '';
+        }
+        
+        // Split by dash, underscore, or space, capitalize each word, join
+        const result = str
+            .trim()
+            .split(/[-_\s]+/)
+            .filter(word => word.length > 0)  // Remove empty strings
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join('');
+            
+        if (!result) {
+            logger.error(`toPascalCase produced empty result from input: "${str}"`);
+        }
+        
+        return result;
     }
 
     private toCamelCase(str: string): string {
         const pascal = this.toPascalCase(str);
+        if (!pascal) {
+            return '';
+        }
         return pascal.charAt(0).toLowerCase() + pascal.slice(1);
     }
 }

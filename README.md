@@ -4,7 +4,7 @@
 
 ## Overview
 
-The DevEx AI Assistant is a comprehensive VS Code extension that leverages GitHub Copilot to accelerate your entire software development lifecycle - from design validation to code generation to deployment automation. Built for engineering teams to maintain velocity while ensuring principal engineer-level quality standards throughout the SDLC.
+The Spec2PR is a comprehensive VS Code extension that leverages GitHub Copilot to accelerate your entire software development lifecycle - from design validation to code generation to deployment automation. Built for engineering teams to maintain velocity while ensuring principal engineer-level quality standards throughout the SDLC.
 
 **What started as a Spring Boot generator has evolved into a complete development workflow assistant** that covers:
 - 📋 Design review and validation
@@ -17,7 +17,6 @@ The DevEx AI Assistant is a comprehensive VS Code extension that leverages GitHu
 
 ### Core Capabilities
 
-#### Design & Planning Phase
 #### Design & Planning Phase
 - **Generate LLD from Requirements** ⭐ NEW: Convert requirements documents (PDF/TXT/MD) into comprehensive LLDs
   - **Interactive conversational workflow** with clarifying questions
@@ -93,6 +92,18 @@ Access all commands via Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) or cont
 - **Parse OpenAPI Spec** - Validate and analyze API specifications
 - **Review Code** - AI-powered code quality and architecture review
 - **Add REST Endpoint** - Quick endpoint scaffolding (coming soon)
+
+####  Testing & Quality Assurance 🆕
+- **Generate Unit Tests (80%+ Coverage)** - AI-powered test generation for Java and .NET
+  - Analyze code structure (methods, complexity, edge cases)
+  - Generate JUnit 5 + Mockito (Java) or xUnit + Moq (.NET) tests
+  - Interactive single-file or batch project-wide generation
+  - Coverage estimation and quality metrics
+- **Auto-Generate Tests During Story Creation** ⭐ - Tests created before marking stories complete
+  - Integrated with "Generate Domain-Driven APIs" workflow
+  - Automatic test generation after Spring Boot code
+  - Coverage metrics in Jira comments
+  - Enforces Definition of Done with tests
 
 ####  Deployment & Infrastructure
 - **Insert Deployment Template** - Add Kubernetes/Docker/CI-CD configurations

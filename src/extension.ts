@@ -18,6 +18,10 @@ import { createJiraStoryFromLLD } from './commands/createJiraStoryFromLLD';
 import { implementJiraStory } from './commands/implementJiraStory';
 import { completeJiraStory } from './commands/completeJiraStory';
 import { convertMarkdownCommand } from './commands/convertMarkdown';
+import { analyzeERDCommand } from './commands/analyzeERD';
+import { generateDomainDrivenAPIsCommand } from './commands/generateDomainDrivenAPIs';
+import { generateUnitTestsCommand, generateTestsForProjectCommand } from './commands/generateUnitTests';
+import { validateGeneratedCode } from './commands/validateGeneratedCode';
 import { TelemetryService } from './services/telemetryService';
 import { checkForUpdatesCommand } from './commands/checkForUpdates';
 import { registerChatParticipant } from './chatParticipant';
@@ -154,6 +158,36 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('devex.convertMarkdown', (fileUri?: vscode.Uri) => 
             convertMarkdownCommand(context, telemetryService, fileUri)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.analyzeERD', (fileUri?: vscode.Uri) => 
+            analyzeERDCommand(fileUri)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateDomainDrivenAPIs', () => 
+            generateDomainDrivenAPIsCommand()
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateUnitTests', () => 
+            generateUnitTestsCommand()
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateTestsForProject', () => 
+            generateTestsForProjectCommand()
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.validateGeneratedCode', () => 
+            validateGeneratedCode(context)
         )
     );
 

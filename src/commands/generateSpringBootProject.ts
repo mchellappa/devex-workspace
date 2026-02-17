@@ -52,6 +52,9 @@ export async function generateSpringBootProjectCommand(
                 // Parse OpenAPI spec
                 const openApiSpec = await parseOpenAPISpec(openApiFile);
                 const endpoints = extractEndpoints(openApiSpec);
+                const schemas = extractSchemas(openApiSpec);
+
+                logger.info(`Extracted ${endpoints.length} endpoints and ${Object.keys(schemas).length} schemas from OpenAPI spec`);
 
                 progress.report({ increment: 20, message: 'Analyzing LLD (if provided)...' });
 
@@ -77,7 +80,7 @@ export async function generateSpringBootProjectCommand(
                     buildTool: config.buildTool
                 };
 
-                await generator.generateProject(springBootConfig, endpoints);
+                await generator.generateProject(springBootConfig, endpoints, schemas);
 
                 progress.report({ increment: 80, message: 'Committing to git...' });
 
@@ -375,6 +378,135 @@ function extractEndpoints(openApiSpec: any): OpenAPIEndpoint[] {
     }
 
     return endpoints;
+}
+
+/**
+ * Extract schemas from OpenAPI spec with field filtering
+ * Filters out system-managed fields that conflict with templates:
+ * - id, *Id: Auto-generated primary keys
+ * - createdAt, updatedAt, createdDate, lastUpdateTime: Timestamp fields
+ * - createdBy, lastUpdateBy: Audit fields
+ * - rowVersion: Optimistic locking field
+ */
+function extractSchemas(openApiSpec: any): Record<string, any> {
+    const schemas: Record<string, any> = {};
+    
+    if (!openApiSpec.components?.schemas) {
+        return schemas;
+    }
+
+    for (const [schemaName, schemaDefinition] of Object.entries<any>(openApiSpec.components.schemas)) {
+        const properties = schemaDefinition.properties || {};
+        const required = schemaDefinition.required || [];
+        const fields: any[] = [];
+
+        for (const [fieldName, fieldSchema] of Object.entries<any>(properties)) {
+            // Skip system-managed fields that templates auto-generate
+            if (shouldSkipField(fieldName, schemaName)) {
+                logger.info(`Skipping system field: ${fieldName} in ${schemaName}`);
+                continue;
+            }
+
+            const javaType = mapOpenAPITypeToJava(fieldSchema);
+            fields.push({
+                name: fieldName,
+                type: javaType,
+                required: required.includes(fieldName),
+                isString: javaType === 'String',
+                isInteger: javaType === 'Integer' || javaType === 'Long',
+                isBoolean: javaType === 'Boolean',
+                isDate: javaType === 'LocalDateTime' || javaType === 'LocalDate',
+                description: fieldSchema.description || ''
+            });
+        }
+
+        schemas[schemaName] = {
+            name: schemaName,
+            fields,
+            description: schemaDefinition.description || ''
+        };
+    }
+
+    return schemas;
+}
+
+/**
+ * Determine if a field should be skipped (system-managed field)
+ */
+function shouldSkipField(fieldName: string, entityName: string): boolean {
+    const fieldLower = fieldName.toLowerCase();
+    const entityLower = entityName.toLowerCase();
+
+    // Skip exact matches for common system fields
+    const systemFields = [
+        'id',
+        'createdat',
+        'updatedat',
+        'createddate',
+        'lastupdatetime',
+        'createdby',
+        'lastupdateby',
+        'rowversion',
+        'version'
+    ];
+
+    if (systemFields.includes(fieldLower)) {
+        return true;
+    }
+
+    // Skip entity-specific ID fields (e.g., proposalId for Proposal entity)
+    if (fieldLower === entityLower + 'id') {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Map OpenAPI data types to Java types
+ */
+function mapOpenAPITypeToJava(fieldSchema: any): string {
+    const type = fieldSchema.type;
+    const format = fieldSchema.format;
+
+    if (type === 'integer') {
+        if (format === 'int64') {
+            return 'Long';
+        }
+        return 'Integer';
+    }
+
+    if (type === 'number') {
+        if (format === 'float') {
+            return 'Float';
+        }
+        return 'Double';
+    }
+
+    if (type === 'boolean') {
+        return 'Boolean';
+    }
+
+    if (type === 'string') {
+        if (format === 'date-time') {
+            return 'LocalDateTime';
+        }
+        if (format === 'date') {
+            return 'LocalDate';
+        }
+        if (format === 'time') {
+            return 'LocalTime';
+        }
+        return 'String';
+    }
+
+    if (type === 'array') {
+        const itemType = fieldSchema.items ? mapOpenAPITypeToJava(fieldSchema.items) : 'Object';
+        return `List<${itemType}>`;
+    }
+
+    // Default to String for unknown types
+    return 'String';
 }
 
 /**

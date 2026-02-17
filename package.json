@@ -2,7 +2,7 @@
   "name": "devex-ai-assistant",
   "displayName": "Spec2PR",
   "description": "Complete SDLC acceleration platform: LLD review, OpenAPI generation, Spring Boot code generation, deployment automation, and productivity analytics. AI-powered by GitHub Copilot.",
-  "version": "1.4.1",
+  "version": "1.8.10",
   "publisher": "CodeSamurai",
   "icon": "images/icon.png",
   "private": true,
@@ -171,6 +171,36 @@
         "title": "Convert Markdown to DOCX/PDF",
         "category": "DevEx",
         "icon": "$(file-pdf)"
+      },
+      {
+        "command": "devex.analyzeERD",
+        "title": "Analyze ERD Diagram",
+        "category": "DevEx",
+        "icon": "$(database)"
+      },
+      {
+        "command": "devex.generateDomainDrivenAPIs",
+        "title": "GenerateDomainDrivenAPIs",
+        "category": "DevEx",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "devex.generateUnitTests",
+        "title": "Generate Unit Tests (80%+ Coverage)",
+        "category": "DevEx",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "devex.generateTestsForProject",
+        "title": "Generate Unit Tests for Entire Project",
+        "category": "DevEx",
+        "icon": "$(file-submodule)"
+      },
+      {
+        "command": "devex.validateGeneratedCode",
+        "title": "Validate Generated Spring Boot Code",
+        "category": "DevEx",
+        "icon": "$(check-all)"
       }
     ],
     "menus": {
@@ -214,6 +244,11 @@
           "when": "resourceExtname == .yaml || resourceExtname == .yml || resourceExtname == .json",
           "command": "devex.parseOpenAPI",
           "group": "devex@7"
+        },
+        {
+          "when": "resourceExtname == .java || resourceExtname == .cs",
+          "command": "devex.generateUnitTests",
+          "group": "devex@8"
         }
       ],
       "explorer/context": [
@@ -261,6 +296,11 @@
           "when": "resourceExtname == .yaml || resourceExtname == .yml || resourceExtname == .json",
           "command": "devex.parseOpenAPI",
           "group": "devex@8"
+        },
+        {
+          "when": "resourceExtname == .png || resourceExtname == .jpg || resourceExtname == .jpeg",
+          "command": "devex.analyzeERD",
+          "group": "devex@9"
         }
       ]
     },
@@ -446,7 +486,11 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "package": "vsce package"
+    "package": "vsce package",
+    "validate-templates": "node scripts/validate-templates.js",
+    "pre-package": "node scripts/pre-package-validation.js",
+    "maven-test": "node scripts/maven-compile-test.js",
+    "maven-test-openapi": "node scripts/maven-test-with-openapi.js"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

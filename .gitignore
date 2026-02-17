@@ -2,6 +2,12 @@
 out
 dist
 *.vsix
+*.devex
+*.validation-output
+.vscode/
+.venv
+examples/
+
 
 # Node.js / TypeScript
 node_modules/

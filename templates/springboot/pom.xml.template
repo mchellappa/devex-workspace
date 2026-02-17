@@ -22,7 +22,9 @@
         <java.version>{{javaVersion}}</java.version>
         <mockito.version>5.8.0</mockito.version>
         <bytebuddy.version>1.14.11</bytebuddy.version>
-        <jjwt.version>0.12.6</jjwt.version>
+        <!-- jjwt.version>0.12.6</jjwt.version -->  <!-- Not needed for APIM-backed deployment -->
+        <mapstruct.version>1.5.5.Final</mapstruct.version>
+        <lombok-mapstruct.version>0.2.0</lombok-mapstruct.version>
     </properties>
 
     <dependencies>
@@ -38,10 +40,10 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
-        <!-- Spring Boot Starter JDBC for database support -->
+        <!-- Spring Boot Starter Data JPA for ORM -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-jdbc</artifactId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
 
         <!-- Spring Boot Starter Validation -->
@@ -56,7 +58,8 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
-        <!-- JWT Dependencies for Java 21 -->
+        <!-- JWT Dependencies - COMMENTED OUT (not needed for APIM-backed deployment)
+             Uncomment if implementing standalone JWT authentication without API Gateway
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-api</artifactId>
@@ -74,6 +77,7 @@
             <version>${jjwt.version}</version>
             <scope>runtime</scope>
         </dependency>
+        -->
 
         <!-- Spring Boot Starter Test -->
         <dependency>
@@ -90,6 +94,13 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- MapStruct for DTO mapping -->
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+            <version>${mapstruct.version}</version>
+        </dependency>
+
         <!-- SLF4J for logging -->
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -97,11 +108,25 @@
             <version>2.0.9</version>
         </dependency>
 
-        <!-- SQL Server JDBC Driver for database interaction -->
+        <!-- SpringDoc OpenAPI for Swagger UI -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.7.0</version>
+        </dependency>
+
+        <!-- H2 Database for development/testing -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- SQL Server JDBC Driver for production database -->
         <dependency>
             <groupId>com.microsoft.sqlserver</groupId>
             <artifactId>mssql-jdbc</artifactId>
-            <version>12.4.2.jre11</version>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- Validation API -->
@@ -158,9 +183,19 @@
                     <release>21</release>
                     <annotationProcessorPaths>
                         <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${mapstruct.version}</version>
+                        </path>
+                        <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
                             <version>1.18.30</version>
+                        </path>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok-mapstruct-binding</artifactId>
+                            <version>${lombok-mapstruct.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>

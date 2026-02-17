@@ -80,12 +80,13 @@ export async function analyzeJiraTicketCommand(
                 progress.report({ increment: 15, message: `Analyzing ${imageAttachments.length} diagram(s)...` });
                 diagramAnalysis = await analyzeDiagramsFromJira(imageAttachments, jiraService);
             } else if (diagramLinks.length > 0) {
-                // Show helpful message about exporting Lucidchart
+                // Show helpful message about exporting Lucidchart (fire and forget - don't wait for user action)
                 vscode.window.showInformationMessage(
                     `📊 Found ${diagramLinks.length} Lucidchart link(s)! Attach exported PNG/JPG to Jira for AI analysis.`,
                     'How to Export'
                 ).then(action => {
                     if (action === 'How to Export') {
+                        // Show second message with instructions (don't await)
                         vscode.window.showInformationMessage(
                             'In Lucidchart: File → Export → PNG/JPEG → Download → Attach to Jira ticket'
                         );
@@ -118,8 +119,41 @@ export async function analyzeJiraTicketCommand(
             // Create and display analysis document
             await displayAnalysis(issue, analysis, diagramLinks);
 
-            progress.report({ increment: 100, message: 'Analysis complete!' });
+            // Mark as complete to dismiss progress notification
+            progress.report({ increment: 100, message: 'Complete!' });
         });
+
+        // Show completion message immediately after progress dismisses
+        // This replaces the progress notification
+        setTimeout(async () => {
+            const action = await vscode.window.showInformationMessage(
+                `✅ ${issueKey!} analyzed successfully!`,
+                'View Analysis',
+                'Copy TODO',
+                'Open in Jira'
+            );
+            
+            // Handle actions if user clicks
+            if (action === 'Copy TODO') {
+                // Find the analysis document and extract TODO
+                const visibleEditors = vscode.window.visibleTextEditors;
+                const analysisEditor = visibleEditors.find(e => e.document.fileName.includes(issueKey!));
+                if (analysisEditor) {
+                    const content = analysisEditor.document.getText();
+                    const todoMatch = content.match(/## 📋 TODO List[\s\S]*?(?=\n## |$)/);
+                    if (todoMatch) {
+                        await vscode.env.clipboard.writeText(todoMatch[0]);
+                        vscode.window.showInformationMessage('TODO list copied!');
+                    }
+                }
+            } else if (action === 'Open in Jira') {
+                const config = vscode.workspace.getConfiguration('devex.jira');
+                const baseUrl = config.get<string>('baseUrl');
+                if (baseUrl) {
+                    await vscode.env.openExternal(vscode.Uri.parse(`${baseUrl}/browse/${issueKey!}`));
+                }
+            }
+        }, 100); // Small delay to let progress notification dismiss first
 
         // Track telemetry
         const duration = Date.now() - startTime;
@@ -717,50 +751,8 @@ async function displayAnalysis(issue: JiraIssue, analysis: TicketAnalysis, diagr
         }
     }
 
-    // Show completion message with actions
-    const action = await vscode.window.showInformationMessage(
-        `✅ ${analysis.isMultiRepo ? 'Multi-Repo Plan' : 'Ticket Analysis'} Complete for ${issue.key}!`,
-        'Copy TODO List',
-        'Open in Jira',
-        'Save Analysis'
-    );
-
-    if (action === 'Copy TODO List') {
-        const todoText = analysis.todoList.map((task, idx) => `${idx + 1}. ${task}`).join('\n');
-        await vscode.env.clipboard.writeText(todoText);
-        vscode.window.showInformationMessage('TODO list copied to clipboard!');
-    } else if (action === 'Open in Jira') {
-        // Get Jira base URL from config
-        const config = vscode.workspace.getConfiguration('devex.jira');
-        const baseUrl = config.get<string>('baseUrl');
-        if (baseUrl) {
-            const ticketUrl = `${baseUrl}/browse/${issue.key}`;
-            await vscode.env.openExternal(vscode.Uri.parse(ticketUrl));
-        }
-    } else if (action === 'Save Analysis') {
-        const fileName = `${issue.key}_${analysis.isMultiRepo ? 'Plan' : 'Analysis'}.md`;
-        const saveUri = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.file(fileName),
-            filters: {
-                'Markdown': ['md'],
-                'All Files': ['*']
-            }
-        });
-        
-        if (saveUri) {
-            const edit = new vscode.WorkspaceEdit();
-            edit.createFile(saveUri, { overwrite: true });
-            await vscode.workspace.applyEdit(edit);
-            
-            const savedDoc = await vscode.workspace.openTextDocument(saveUri);
-            const fullEdit = new vscode.WorkspaceEdit();
-            fullEdit.insert(saveUri, new vscode.Position(0, 0), content);
-            await vscode.workspace.applyEdit(fullEdit);
-            await savedDoc.save();
-            
-            vscode.window.showInformationMessage(`${analysis.isMultiRepo ? 'Plan' : 'Analysis'} saved to ${fileName}`);
-        }
-    }
+    // Note: Completion message is now shown by the main command function
+    // to allow progress notification to dismiss properly
 }
 
 /**
