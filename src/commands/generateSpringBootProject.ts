@@ -347,7 +347,9 @@ async function selectLLDFile(): Promise<string | undefined> {
 
 async function parseOpenAPISpec(filePath: string): Promise<any> {
     try {
-        const api = await SwaggerParser.validate(filePath);
+        // Use parse() instead of validate() to preserve $ref without dereferencing
+        // validate() automatically dereferences all $ref which loses type information
+        const api = await SwaggerParser.parse(filePath);
         return api;
     } catch (error: any) {
         throw new Error(`Failed to parse OpenAPI specification: ${error.message}`);
@@ -407,15 +409,25 @@ function extractSchemas(openApiSpec: any): Record<string, any> {
                 continue;
             }
 
-            const javaType = mapOpenAPITypeToJava(fieldSchema);
+            const javaType = mapOpenAPITypeToJava(fieldSchema, fieldName);
+            const sanitizedFieldName = toJavaFieldName(fieldName);
+            
+            // Log the sanitization for debugging
+            if (sanitizedFieldName !== fieldName) {
+                logger.info(`Sanitized field name: "${fieldName}" -> "${sanitizedFieldName}" in ${schemaName}`);
+            }
+            
             fields.push({
-                name: fieldName,
+                name: sanitizedFieldName,
+                originalName: fieldName,
                 type: javaType,
                 required: required.includes(fieldName),
                 isString: javaType === 'String',
                 isInteger: javaType === 'Integer' || javaType === 'Long',
                 isBoolean: javaType === 'Boolean',
                 isDate: javaType === 'LocalDateTime' || javaType === 'LocalDate',
+                isMap: javaType.startsWith('Map<'),
+                isJsonField: fieldSchema.type === 'object' && !fieldSchema.$ref,
                 description: fieldSchema.description || ''
             });
         }
@@ -463,9 +475,70 @@ function shouldSkipField(fieldName: string, entityName: string): boolean {
 }
 
 /**
+ * Convert OpenAPI field name to valid Java field name (camelCase)
+ * Examples:
+ *   - 'some-field' -> 'someField'
+ *   - 'field_name' -> 'fieldName'
+ *   - 'FieldName' -> 'fieldName'
+ *   - 'field name' -> 'fieldName'
+ */
+function toJavaFieldName(fieldName: string): string {
+    // Remove invalid characters and split by separators
+    const parts = fieldName
+        .replace(/[^a-zA-Z0-9_-]/g, '') // Remove invalid chars
+        .split(/[-_\s]+/)               // Split by hyphens, underscores, spaces
+        .filter(part => part.length > 0);
+    
+    if (parts.length === 0) {
+        return 'field'; // Fallback for invalid names
+    }
+    
+    // Convert to camelCase: first part lowercase, rest capitalized
+    const camelCase = parts
+        .map((part, index) => {
+            const lower = part.toLowerCase();
+            if (index === 0) {
+                return lower;
+            }
+            return lower.charAt(0).toUpperCase() + lower.slice(1);
+        })
+        .join('');
+    
+    // Ensure it doesn't start with a number
+    if (/^[0-9]/.test(camelCase)) {
+        return 'field' + camelCase.charAt(0).toUpperCase() + camelCase.slice(1);
+    }
+    
+    // Check if it's a Java reserved keyword
+    const javaKeywords = new Set([
+        'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char',
+        'class', 'const', 'continue', 'default', 'do', 'double', 'else', 'enum',
+        'extends', 'final', 'finally', 'float', 'for', 'goto', 'if', 'implements',
+        'import', 'instanceof', 'int', 'interface', 'long', 'native', 'new',
+        'package', 'private', 'protected', 'public', 'return', 'short', 'static',
+        'strictfp', 'super', 'switch', 'synchronized', 'this', 'throw', 'throws',
+        'transient', 'try', 'void', 'volatile', 'while'
+    ]);
+    
+    if (javaKeywords.has(camelCase)) {
+        return camelCase + 'Field'; // Append 'Field' to avoid keyword collision
+    }
+    
+    return camelCase;
+}
+
+/**
  * Map OpenAPI data types to Java types
  */
-function mapOpenAPITypeToJava(fieldSchema: any): string {
+function mapOpenAPITypeToJava(fieldSchema: any, fieldName?: string): string {
+    // Handle $ref (schema reference) - extract the schema name
+    if (fieldSchema.$ref) {
+        const refPath = fieldSchema.$ref as string;
+        const schemaName = refPath.split('/').pop(); // Extract name from '#/components/schemas/CategorySummary'
+        logger.info(`Resolved $ref for field "${fieldName || 'unknown'}": ${refPath} -> ${schemaName}`);
+        return schemaName || 'Object';
+    }
+
     const type = fieldSchema.type;
     const format = fieldSchema.format;
 
@@ -501,10 +574,34 @@ function mapOpenAPITypeToJava(fieldSchema: any): string {
     }
 
     if (type === 'array') {
-        const itemType = fieldSchema.items ? mapOpenAPITypeToJava(fieldSchema.items) : 'Object';
-        return `List<${itemType}>`;
+        if (fieldSchema.items) {
+            const itemType = mapOpenAPITypeToJava(fieldSchema.items, fieldName);
+            logger.info(`Array field "${fieldName || 'unknown'}": items type = ${itemType}`);
+            return `List<${itemType}>`;
+        }
+        logger.warn(`Array field "${fieldName || 'unknown'}" has no items definition, defaulting to List<Object>`);
+        return 'List<Object>'; // Fallback if items not specified
     }
 
+    // Handle inline object definitions (when $ref is not used)
+    if (type === 'object') {
+        // Check if it's a Map (object with additionalProperties)
+        if (fieldSchema.additionalProperties) {
+            // Map with additionalProperties - this is like metadata: { key: value }
+            const valueType = fieldSchema.additionalProperties.type === 'string' ? 'String' : 'Object';
+            logger.info(`Object field "${fieldName || 'unknown'}" has additionalProperties, mapping to Map<String, ${valueType}>`);
+            return `Map<String, ${valueType}>`;
+        }
+        
+        // Plain object without $ref or additionalProperties
+        // Store as JSON string for JPA compatibility
+        logger.warn(`Object field "${fieldName || 'unknown'}" has inline definition (no $ref), mapping to String for JSON storage`);
+        return 'String';
+    }
+
+    // Log unknown types for debugging
+    logger.warn(`Unknown type for field "${fieldName || 'unknown'}": ${JSON.stringify(fieldSchema)}, defaulting to String`);
+    
     // Default to String for unknown types
     return 'String';
 }

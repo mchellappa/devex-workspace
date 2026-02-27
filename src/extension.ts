@@ -17,6 +17,7 @@ import { generateKDD } from './commands/generateKDD';
 import { createJiraStoryFromLLD } from './commands/createJiraStoryFromLLD';
 import { implementJiraStory } from './commands/implementJiraStory';
 import { completeJiraStory } from './commands/completeJiraStory';
+import { resumeJiraStoryCompletion } from './commands/resumeJiraStoryCompletion';
 import { convertMarkdownCommand } from './commands/convertMarkdown';
 import { analyzeERDCommand } from './commands/analyzeERD';
 import { generateDomainDrivenAPIsCommand } from './commands/generateDomainDrivenAPIs';
@@ -152,6 +153,12 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('devex.completeJiraStory', (issueKey?: string) => 
             completeJiraStory(context, telemetryService, issueKey)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.resumeJiraStoryCompletion', () => 
+            resumeJiraStoryCompletion(context, telemetryService)
         )
     );
 

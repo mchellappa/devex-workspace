@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+{{{imports}}}
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
@@ -70,10 +71,21 @@ public class {{className}} implements Serializable {
     {{#each fields}}
     /**
      * {{name}} field for {{../entityName}}.
+     {{#if description}}
+     * {{description}}
+     {{/if}}
+     {{#if isMap}}
+     * Note: Map types are stored as JSON in the database.
+     * Requires @JdbcTypeCode for proper Hibernate 6+ handling.
+     {{/if}}
      * TODO: Add @Column annotation with appropriate constraints
      * Example: @Column(name = "{{name}}", length = 255, nullable = false)
      */
-    private {{type}} {{name}};
+    {{#if isMap}}
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(columnDefinition = "TEXT")
+    {{/if}}
+    private {{{type}}} {{name}};
     {{/each}}
 
     /**

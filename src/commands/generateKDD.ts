@@ -449,12 +449,19 @@ Non-Functional Requirements:
 Constraints:
 ${kddContext.constraints?.map(c => `- ${c}`).join('\n') || 'Not provided'}
 
+IMPORTANT: You must provide scores for ALL THREE options in the decision matrix, not just the recommended one.
+
 Provide:
 1. Which option you recommend (1, 2, or 3)
 2. A detailed justification (3-4 paragraphs)
-3. Scores for each option (1-10) on: performance, scalability, cost, complexity, timeToMarket
+3. Scores for ALL THREE options (1-10 scale where 10 is best) on: 
+   - performance (execution speed, resource efficiency)
+   - scalability (ability to handle growth)
+   - cost (implementation and operational costs, where 10 is lowest cost)
+   - complexity (technical complexity, where 10 is simplest)
+   - timeToMarket (speed of implementation, where 10 is fastest)
 
-Format your response as JSON:
+Format your response as JSON with scores for ALL THREE options in order (Option 1, Option 2, Option 3):
 {
     "recommendedOption": 1,
     "justification": "Detailed justification...",
@@ -465,6 +472,20 @@ Format your response as JSON:
             "cost": 6,
             "complexity": 5,
             "timeToMarket": 9
+        },
+        {
+            "performance": 7,
+            "scalability": 6,
+            "cost": 8,
+            "complexity": 6,
+            "timeToMarket": 7
+        },
+        {
+            "performance": 6,
+            "scalability": 8,
+            "cost": 5,
+            "complexity": 7,
+            "timeToMarket": 6
         }
     ]
 }`;

@@ -4,6 +4,7 @@ import * as path from 'path';
 import { TelemetryService } from '../services/telemetryService';
 import { JiraService } from '../services/jiraService';
 import { logger } from '../utils/logger';
+import { getDevExStateManager, PendingCompletion } from '../services/devexStateManager';
 
 export async function completeJiraStory(
     context: vscode.ExtensionContext,
@@ -11,6 +12,15 @@ export async function completeJiraStory(
     issueKey?: string
 ): Promise<void> {
     const startTime = Date.now();
+    const stateManager = getDevExStateManager();
+    
+    // Log command execution
+    stateManager.logActivity({
+        command: 'completeJiraStory',
+        workspace: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        status: 'started',
+        details: { issueKey }
+    });
 
     try {
         // Step 1: Get Jira configuration
@@ -60,7 +70,17 @@ export async function completeJiraStory(
             throw new Error('No workspace folder found');
         }
 
-        // Step 3: Check for Git repository
+        // Step 3: Fetch issue details early (needed for repo request if git not found)
+        const issue = await jiraService.fetchIssue(selectedIssueKey);
+
+        if (!issue) {
+            throw new Error(`Issue ${selectedIssueKey} not found`);
+        }
+
+        // Step 3.5: Determine if this is an API story (needed for repo request scenario)
+        const isApiStory = isRestfulApiStory(issue);
+
+        // Step 4: Check for Git repository
         const gitExtension = vscode.extensions.getExtension('vscode.git')?.exports;
         const git = gitExtension?.getAPI(1);
 
@@ -74,16 +94,135 @@ export async function completeJiraStory(
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
 
-        const repository = git.repositories[0];
+        let repository = git.repositories[0];
         if (!repository) {
-            throw new Error('No Git repository found in workspace. Please ensure your workspace is a Git repository (run: git init)');
+            // Offer to initialize git repository or create GitHub issue to request one
+            const action = await vscode.window.showWarningMessage(
+                'No Git repository found in workspace. How would you like to proceed?',
+                { modal: true },
+                'Initialize Git Locally',
+                'Create GitHub Issue for Repo Request',
+                'Cancel'
+            );
+
+            if (action === 'Cancel' || !action) {
+                vscode.window.showInformationMessage('Completion cancelled - Git repository required');
+                return;
+            }
+
+            if (action === 'Create GitHub Issue for Repo Request') {
+                // Create GitHub issue to request new repository
+                const issueCreated = await createGitHubRepoRequestIssue(
+                    workspaceFolder,
+                    selectedIssueKey,
+                    issue
+                );
+                
+                if (issueCreated) {
+                    // Save state for resuming later in .devex folder
+                    const pendingCompletion: PendingCompletion = {
+                        issueKey: selectedIssueKey,
+                        workspacePath: workspaceFolder.uri.fsPath,
+                        timestamp: Date.now(),
+                        isApiStory
+                    };
+                    
+                    await stateManager.savePendingCompletion(pendingCompletion);
+                    
+                    stateManager.logActivity({
+                        command: 'completeJiraStory',
+                        workspace: workspaceFolder.uri.fsPath,
+                        status: 'completed',
+                        details: { issueKey: selectedIssueKey, action: 'repo_request_created' },
+                        duration: Date.now() - startTime
+                    });
+                    
+                    const resumeAction = await vscode.window.showInformationMessage(
+                        '✅ GitHub issue created for repo request.\n\n' +
+                        'After the repository is created on GitHub:\n' +
+                        '1. Copy the new repository URL\n' +
+                        '2. Click "Resume" to connect and continue\n\n' +
+                        'Or manually run the Complete command again later.',
+                        { modal: true },
+                        'Resume After Repo Created',
+                        'I\'ll Do It Later'
+                    );
+                    
+                    if (resumeAction === 'Resume After Repo Created') {
+                        // Wait for user to confirm repo is ready
+                        const repoUrl = await vscode.window.showInputBox({
+                            prompt: 'Enter the URL of the newly created GitHub repository',
+                            placeHolder: 'https://github.com/mfc-gwam/peng-projectname-api',
+                            validateInput: (value) => {
+                                if (!value || !value.includes('github.com')) {
+                                    return 'Please enter a valid GitHub repository URL';
+                                }
+                                return null;
+                            }
+                        });
+                        
+                        if (repoUrl) {
+                            // Initialize git and connect to remote
+                            const connected = await connectToNewRepository(workspaceFolder, repoUrl);
+                            
+                            if (connected) {
+                                // Clear pending state from .devex folder
+                                await stateManager.clearPendingCompletion(selectedIssueKey);
+                                
+                                // Refresh git repositories
+                                await new Promise(resolve => setTimeout(resolve, 2000));
+                                repository = git.repositories[0];
+                                
+                                if (!repository) {
+                                    throw new Error('Could not detect git repository after connecting. Please restart VS Code.');
+                                }
+                                
+                                vscode.window.showInformationMessage('✅ Connected to repository. Continuing with completion...');
+                                // Continue with normal flow (don't return)
+                            } else {
+                                vscode.window.showWarningMessage('Failed to connect to repository. Please try again later.');
+                                return;
+                            }
+                        } else {
+                            vscode.window.showInformationMessage('Resume cancelled. Run Complete command again when ready.');
+                            return;
+                        }
+                    } else {
+                        vscode.window.showInformationMessage('You can resume by running the Complete command again.');
+                        return;
+                    }
+                } else {
+                    vscode.window.showWarningMessage('Failed to create GitHub issue. Please create it manually.');
+                    return;
+                }
+            }
+
+            // Initialize git repository locally
+            const { exec } = require('child_process');
+            const { promisify } = require('util');
+            const execAsync = promisify(exec);
+            
+            try {
+                await execAsync('git init', { cwd: workspaceFolder.uri.fsPath });
+                logger.info('Initialized git repository');
+                
+                // Wait for VS Code to detect the new repository
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                repository = git.repositories[0];
+                if (!repository) {
+                    throw new Error('Git repository initialized but not detected by VS Code. Please restart VS Code.');
+                }
+                
+                vscode.window.showInformationMessage('✅ Git repository initialized');
+            } catch (error: any) {
+                throw new Error(`Failed to initialize git repository: ${error.message}`);
+            }
         }
 
-        // Step 4: Fetch issue details
-        const issue = await jiraService.fetchIssue(selectedIssueKey);
-
-        if (!issue) {
-            throw new Error(`Issue ${selectedIssueKey} not found`);
+        // Step 5: Log if this is a RESTful API story (already determined earlier)
+        if (isApiStory) {
+            logger.info(`Detected RESTful API story: ${selectedIssueKey}`);
         }
 
         await vscode.window.withProgress({
@@ -108,12 +247,12 @@ export async function completeJiraStory(
             const options = await vscode.window.showQuickPick(
                 [
                     { label: 'Run Tests', description: 'Run tests before committing', picked: true },
-                    { label: 'Create Pull Request', description: 'Create GitHub PR after push', picked: true },
+                    { label: 'Create Pull Request', description: isApiStory ? 'Required for API stories' : 'Create GitHub PR after push', picked: true },
                     { label: 'Transition to Done', description: 'Mark Jira story as Done', picked: true }
                 ],
                 {
                     canPickMany: true,
-                    placeHolder: 'Select completion options',
+                    placeHolder: isApiStory ? `Complete ${selectedIssueKey} (API Story - PR Required)` : `Complete ${selectedIssueKey}`,
                     title: `Complete ${selectedIssueKey}`
                 }
             );
@@ -123,8 +262,25 @@ export async function completeJiraStory(
             }
 
             const shouldRunTests = options.some(o => o.label === 'Run Tests');
-            const shouldCreatePR = options.some(o => o.label === 'Create Pull Request');
+            let shouldCreatePR = options.some(o => o.label === 'Create Pull Request');
             const shouldTransitionToDone = options.some(o => o.label === 'Transition to Done');
+            
+            // For API stories, PR is mandatory
+            if (isApiStory && !shouldCreatePR) {
+                const forcePR = await vscode.window.showWarningMessage(
+                    '⚠️ This is a RESTful API story. Pull Request is required to link code changes to Jira.',
+                    { modal: true },
+                    'Create PR',
+                    'Cancel'
+                );
+                
+                if (forcePR !== 'Create PR') {
+                    vscode.window.showInformationMessage('Completion cancelled - PR required for API stories');
+                    return;
+                }
+                
+                shouldCreatePR = true;
+            }
 
             let testResults = { passed: true, summary: '' };
 
@@ -346,8 +502,63 @@ export async function completeJiraStory(
                         commitMessage,
                         progress
                     );
+                    
+                    // For API stories, validate PR URL was obtained
+                    if (isApiStory && (!prUrl || prUrl.includes('manually') || prUrl.includes('browser'))) {
+                        const manualPrUrl = await vscode.window.showInputBox({
+                            prompt: '⚠️ API Story requires PR URL. Please enter the GitHub PR URL:',
+                            placeHolder: 'https://github.com/owner/repo/pull/123',
+                            validateInput: (value) => {
+                                if (!value || value.trim().length === 0) {
+                                    return 'PR URL is required for API stories';
+                                }
+                                if (!value.includes('github.com') || !value.includes('/pull/')) {
+                                    return 'Please enter a valid GitHub PR URL';
+                                }
+                                return null;
+                            }
+                        });
+                        
+                        if (!manualPrUrl) {
+                            vscode.window.showWarningMessage('Completion will continue but PR URL is missing');
+                        } else {
+                            prUrl = manualPrUrl;
+                        }
+                    }
                 } catch (prError: any) {
-                    vscode.window.showWarningMessage(`Could not create PR: ${prError.message}`);
+                    if (isApiStory) {
+                        // For API stories, PR is critical
+                        const continueWithoutPR = await vscode.window.showErrorMessage(
+                            `Failed to create PR: ${prError.message}\n\nAPI stories require a PR URL. Continue anyway?`,
+                            { modal: true },
+                            'Enter PR URL Manually',
+                            'Cancel'
+                        );
+                        
+                        if (continueWithoutPR === 'Enter PR URL Manually') {
+                            const manualPrUrl = await vscode.window.showInputBox({
+                                prompt: 'Enter the GitHub PR URL:',
+                                placeHolder: 'https://github.com/owner/repo/pull/123',
+                                validateInput: (value) => {
+                                    return value && value.includes('github.com') && value.includes('/pull/') 
+                                        ? null 
+                                        : 'Please enter a valid GitHub PR URL';
+                                }
+                            });
+                            
+                            if (manualPrUrl) {
+                                prUrl = manualPrUrl;
+                            } else {
+                                vscode.window.showInformationMessage('Completion cancelled - PR URL required for API stories');
+                                return;
+                            }
+                        } else {
+                            vscode.window.showInformationMessage('Completion cancelled');
+                            return;
+                        }
+                    } else {
+                        vscode.window.showWarningMessage(`Could not create PR: ${prError.message}`);
+                    }
                 }
             }
 
@@ -380,14 +591,22 @@ export async function completeJiraStory(
             await jiraService.addComment(selectedIssueKey, completionComment);
 
             // Add PR as remote link to Jira's Development section
-            if (prUrl && !prUrl.includes('manually')) {
+            if (prUrl && !prUrl.includes('manually') && !prUrl.includes('browser')) {
                 progress.report({ message: 'Linking PR to Jira...' });
-                await jiraService.addRemoteLink(
-                    selectedIssueKey,
-                    prUrl,
-                    `PR: ${issue.summary}`,
-                    'Pull Request'
-                );
+                try {
+                    await jiraService.addRemoteLink(
+                        selectedIssueKey,
+                        prUrl,
+                        `PR: ${issue.summary}`,
+                        'Pull Request'
+                    );
+                    logger.info(`Linked PR to Jira: ${prUrl}`);
+                } catch (linkError: any) {
+                    logger.warn(`Failed to link PR to Jira: ${linkError.message}`);
+                    // Continue anyway - comment already added
+                }
+            } else if (isApiStory && !prUrl) {
+                vscode.window.showWarningMessage('⚠️ API Story completed but PR URL not linked to Jira');
             }
 
             // Step 14: Transition to DONE if requested
@@ -415,6 +634,20 @@ export async function completeJiraStory(
                 transitioned: shouldTransitionToDone.toString(),
                 filesChanged: changedFiles.length.toString()
             });
+            
+            // Log completion success to .devex
+            stateManager.logActivity({
+                command: 'completeJiraStory',
+                workspace: workspaceFolder.uri.fsPath,
+                status: 'completed',
+                details: {
+                    issueKey: selectedIssueKey,
+                    testsRun: shouldRunTests,
+                    prCreated: !!prUrl,
+                    filesChanged: changedFiles.length
+                },
+                duration
+            });
 
             // Step 15: Show success message
             const issueUrl = `${jiraBaseUrl}/browse/${selectedIssueKey}`;
@@ -438,6 +671,16 @@ export async function completeJiraStory(
     } catch (error: any) {
         const errorMsg = error.message || String(error);
         console.error('Complete Jira Story error:', error);
+        
+        // Log failure to .devex
+        const stateManager = getDevExStateManager();
+        stateManager.logActivity({
+            command: 'completeJiraStory',
+            workspace: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+            status: 'failed',
+            details: { error: errorMsg },
+            duration: Date.now() - startTime
+        });
         
         // Show detailed error message
         vscode.window.showErrorMessage(
@@ -661,5 +904,214 @@ async function createPullRequest(
     } catch (error: any) {
         vscode.window.showErrorMessage(`Failed to create PR: ${error.message}`);
         throw error;
+    }
+}
+
+/**
+ * Determines if a Jira issue is a RESTful API story
+ * Checks issue type, labels, and summary for API-related keywords
+ */
+function isRestfulApiStory(issue: any): boolean {
+    const issueType = issue.issueType?.toLowerCase() || '';
+    const summary = issue.summary?.toLowerCase() || '';
+    const description = issue.description?.toLowerCase() || '';
+    const labels = (issue.labels || []).map((l: string) => l.toLowerCase());
+    
+    // Check issue type
+    const apiIssueTypes = ['api', 'rest api', 'restful api', 'api development', 'api story'];
+    if (apiIssueTypes.some(type => issueType.includes(type))) {
+        return true;
+    }
+    
+    // Check labels
+    const apiLabels = ['api', 'rest-api', 'restful-api', 'rest', 'api-development', 'backend-api'];
+    if (labels.some((label: string) => apiLabels.includes(label))) {
+        return true;
+    }
+    
+    // Check summary for API keywords
+    const apiKeywords = [
+        'rest api',
+        'restful api',
+        'api endpoint',
+        'create api',
+        'develop api',
+        'implement api',
+        'api for',
+        '/api/',
+        'rest service',
+        'restful service',
+        'web service',
+        'microservice api'
+    ];
+    
+    if (apiKeywords.some(keyword => summary.includes(keyword) || description.includes(keyword))) {
+        return true;
+    }
+    
+    return false;
+}
+
+/**
+ * Creates a GitHub issue to request a new repository using company's IssueOps template
+ * Opens browser to the form template at mfc-gwam/peng-bldengg-action-ref
+ */
+async function createGitHubRepoRequestIssue(
+    workspaceFolder: vscode.WorkspaceFolder,
+    jiraIssueKey: string,
+    jiraIssue: any
+): Promise<boolean> {
+    try {
+        const projectName = workspaceFolder.name;
+        
+        // Show information message with context
+        const proceed = await vscode.window.showInformationMessage(
+            `📋 Opening GitHub repository request form for: ${projectName}\n\n` +
+            `The form will be pre-populated with:\n` +
+            `- Title: Create Repository - ${projectName}\n` +
+            `- Jira Issue: ${jiraIssueKey}\n\n` +
+            `Please fill out the required fields in the form:\n` +
+            `✓ Vertical (e.g., peng, eng, dgt)\n` +
+            `✓ Repository Type (e.g., api, ui, lib)\n` +
+            `✓ Deployment Region (CA/US/ASIA)\n` +
+            `✓ ACL Name\n` +
+            `✓ Visibility (private/internal)\n` +
+            `And other scan/mirror options as needed.`,
+            { modal: true },
+            'Open Form',
+            'Cancel'
+        );
+        
+        if (proceed !== 'Open Form') {
+            return false;
+        }
+        
+        // Use the company's IssueOps template
+        const repoRequestRepo = 'mfc-gwam/peng-bldengg-action-ref';
+        const templateName = 'issueops-hcreate-new-repo.yml';
+        
+        // Build the title for the issue
+        const issueTitle = `Create Repository - ${projectName}`;
+        
+        // Build URL to the issue form
+        // Note: GitHub issue forms don't support URL parameter pre-filling for form fields
+        // But we can set the title
+        const encodedTitle = encodeURIComponent(issueTitle);
+        const issueUrl = `https://github.com/${repoRequestRepo}/issues/new?template=${templateName}&title=${encodedTitle}`;
+        
+        // Open in browser
+        await vscode.env.openExternal(vscode.Uri.parse(issueUrl));
+        
+        // Show helper information in a notification
+        vscode.window.showInformationMessage(
+            `💡 Tip: Project name is "${projectName}". Use this in the form's "Project Name" field.`,
+            'Copy Project Name'
+        ).then(action => {
+            if (action === 'Copy Project Name') {
+                vscode.env.clipboard.writeText(projectName);
+                vscode.window.showInformationMessage('Project name copied to clipboard');
+            }
+        });
+        
+        // Wait a moment then ask if user created the issue
+        setTimeout(async () => {
+            const result = await vscode.window.showInformationMessage(
+                '✅ After creating the GitHub issue, you can track its progress.\n\n' +
+                'Complete the Jira story after the repository is created and ready.',
+                'I Created the Issue',
+                'Copy Issue Template Link'
+            );
+            
+            if (result === 'Copy Issue Template Link') {
+                await vscode.env.clipboard.writeText(issueUrl);
+                vscode.window.showInformationMessage('Issue template URL copied to clipboard');
+            }
+        }, 3000);
+        
+        logger.info(`Opened repo request form for ${projectName} (Jira: ${jiraIssueKey})`);
+        return true;
+        
+    } catch (error: any) {
+        vscode.window.showErrorMessage(`Failed to open GitHub issue form: ${error.message}`);
+        logger.error('GitHub repo request form opening failed', error);
+        return false;
+    }
+}
+
+/**
+ * Connects workspace to a newly created GitHub repository
+ * Initializes git if needed and adds remote origin
+ */
+async function connectToNewRepository(
+    workspaceFolder: vscode.WorkspaceFolder,
+    repoUrl: string
+): Promise<boolean> {
+    try {
+        const { exec } = require('child_process');
+        const { promisify } = require('util');
+        const execAsync = promisify(exec);
+        const workspacePath = workspaceFolder.uri.fsPath;
+        
+        // Check if git is already initialized
+        let gitInitialized = false;
+        try {
+            await execAsync('git rev-parse --git-dir', { cwd: workspacePath });
+            gitInitialized = true;
+        } catch {
+            // Git not initialized
+        }
+        
+        // Initialize git if needed
+        if (!gitInitialized) {
+            try {
+                await execAsync('git init', { cwd: workspacePath });
+                logger.info('Initialized git repository');
+            } catch (error: any) {
+                throw new Error(`Failed to initialize git: ${error.message}`);
+            }
+        }
+        
+        // Check if remote already exists
+        try {
+            const { stdout } = await execAsync('git remote get-url origin', { cwd: workspacePath });
+            const existingRemote = stdout.trim();
+            
+            if (existingRemote && existingRemote !== repoUrl) {
+                // Remote exists but different URL - update it
+                await execAsync(`git remote set-url origin ${repoUrl}`, { cwd: workspacePath });
+                logger.info(`Updated remote origin to: ${repoUrl}`);
+            } else if (existingRemote === repoUrl) {
+                logger.info('Remote origin already set correctly');
+            }
+        } catch {
+            // Remote doesn't exist - add it
+            try {
+                await execAsync(`git remote add origin ${repoUrl}`, { cwd: workspacePath });
+                logger.info(`Added remote origin: ${repoUrl}`);
+            } catch (error: any) {
+                throw new Error(`Failed to add remote: ${error.message}`);
+            }
+        }
+        
+        // Create initial branch if needed
+        try {
+            await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: workspacePath });
+        } catch {
+            // No branch exists - create one
+            try {
+                await execAsync('git checkout -b develop', { cwd: workspacePath });
+                logger.info('Created develop branch');
+            } catch (error: any) {
+                logger.warn(`Could not create develop branch: ${error.message}`);
+            }
+        }
+        
+        vscode.window.showInformationMessage(`✅ Connected to ${repoUrl}`);
+        return true;
+        
+    } catch (error: any) {
+        vscode.window.showErrorMessage(`Failed to connect to repository: ${error.message}`);
+        logger.error('Repository connection failed', error);
+        return false;
     }
 }

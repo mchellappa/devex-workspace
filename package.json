@@ -2,7 +2,7 @@
   "name": "devex-ai-assistant",
   "displayName": "Spec2PR",
   "description": "Complete SDLC acceleration platform: LLD review, OpenAPI generation, Spring Boot code generation, deployment automation, and productivity analytics. AI-powered by GitHub Copilot.",
-  "version": "1.8.10",
+  "version": "1.8.24",
   "publisher": "CodeSamurai",
   "icon": "images/icon.png",
   "private": true,
@@ -165,6 +165,12 @@
         "title": "Complete Jira Story",
         "category": "DevEx",
         "icon": "$(check)"
+      },
+      {
+        "command": "devex.resumeJiraStoryCompletion",
+        "title": "Resume Jira Story Completion",
+        "category": "DevEx",
+        "icon": "$(debug-continue)"
       },
       {
         "command": "devex.convertMarkdown",

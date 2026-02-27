@@ -51,6 +51,16 @@ Handlebars.registerHelper('pascalCase', function(str: any) {
     return str.charAt(0).toUpperCase() + str.slice(1);
 });
 
+Handlebars.registerHelper('startsWith', function(str: any, prefix: any) {
+    if (!str || typeof str !== 'string') {
+        return false;
+    }
+    if (!prefix || typeof prefix !== 'string') {
+        return false;
+    }
+    return str.startsWith(prefix);
+});
+
 // Helper for proper HTTP method annotation capitalization
 // GET -> GetMapping, POST -> PostMapping, etc.
 Handlebars.registerHelper('methodMapping', function(method: string) {
@@ -83,6 +93,7 @@ export interface OpenAPIEndpoint {
 
 export class SpringBootGenerator {
     private templateProvider: TemplateProvider;
+    private entityNames: Set<string> = new Set<string>();
 
     constructor(templateProvider: TemplateProvider) {
         this.templateProvider = templateProvider;
@@ -118,6 +129,14 @@ export class SpringBootGenerator {
             logger.info('Generating controllers, services, and repositories...');
             const resources = await this.generateControllersFromOpenAPI(projectPath, config, openApiEndpoints, schemas);
 
+            // Store entity names for import resolution
+            this.entityNames = new Set(resources.map(r => this.toPascalCase(r)));
+            logger.info(`Tracked ${this.entityNames.size} entities for import resolution: ${Array.from(this.entityNames).join(', ')}`);
+
+            // Generate all remaining schemas as DTOs (nested types that aren't resources)
+            logger.info('Generating remaining schema DTOs...');
+            await this.generateRemainingSchemas(projectPath, config, resources, schemas);
+
             // Generate configuration classes
             logger.info('Generating configuration classes...');
             await this.generateConfigurationClasses(projectPath, config);
@@ -132,7 +151,7 @@ export class SpringBootGenerator {
 
             // Generate test files
             logger.info('Generating test scaffolding...');
-            await this.generateTestScaffolding(projectPath, config, resources);
+            await this.generateTestScaffolding(projectPath, config, resources, schemas);
 
             // Generate README
             logger.info('Generating README...');
@@ -284,6 +303,95 @@ export class SpringBootGenerator {
         }
         
         return resources;
+    }
+
+    /**
+     * Generate DTO classes for schemas that aren't resources (nested/referenced types)
+     * Examples: CategorySummary, Address, TagSummary, Location
+     */
+    private async generateRemainingSchemas(
+        projectPath: string,
+        config: SpringBootProjectConfig,
+        resources: string[],
+        schemas: Record<string, any>
+    ): Promise<void> {
+        const packagePath = config.packageName.replace(/\./g, '/');
+        const dtoDir = path.join(projectPath, 'src', 'main', 'java', packagePath, 'dto');
+        await fs.promises.mkdir(dtoDir, { recursive: true });
+
+        // Convert resources to PascalCase for comparison
+        const resourceSchemas = new Set<string>();
+        const generatedSchemas = new Set<string>();
+        
+        for (const resource of resources) {
+            const schema = this.findSchemaForResource(resource, schemas);
+            if (schema) {
+                resourceSchemas.add(schema.name);
+                // Track all schemas generated for this resource
+                const entityName = this.toPascalCase(resource);
+                generatedSchemas.add(schema.name);
+                generatedSchemas.add(entityName + 'Request');
+                generatedSchemas.add(entityName + 'Response');
+            }
+        }
+
+        // Generate DTOs for schemas not already generated as resources
+        for (const [schemaName, schema] of Object.entries(schemas)) {
+            if (generatedSchemas.has(schemaName)) {
+                logger.info(`Skipping ${schemaName} - already generated as resource or DTO`);
+                continue;
+            }
+
+            // Skip Spring Framework and Java standard classes that should be imported, not generated
+            const springFrameworkClasses = [
+                'FieldError',           // org.springframework.validation.FieldError
+                'BindingResult',        // org.springframework.validation.BindingResult
+                'Errors',               // org.springframework.validation.Errors
+                'MultipartFile',        // org.springframework.web.multipart.MultipartFile
+                'HttpServletRequest',   // jakarta.servlet.http.HttpServletRequest
+                'HttpServletResponse',  // jakarta.servlet.http.HttpServletResponse
+                'Principal',            // java.security.Principal
+                'Authentication'        // org.springframework.security.core.Authentication
+            ];
+            
+            if (springFrameworkClasses.includes(schemaName)) {
+                logger.info(`Skipping ${schemaName} - Spring Framework class, should be imported not generated`);
+                continue;
+            }
+
+            // Generate all other schemas (including error schemas, summary schemas, etc.)
+            logger.info(`Generating DTO for schema: ${schemaName}`);
+            await this.generateSchemaDTO(projectPath, config, schemaName, schema);
+        }
+    }
+
+    /**
+     * Generate a simple DTO class for a schema
+     */
+    private async generateSchemaDTO(
+        projectPath: string,
+        config: SpringBootProjectConfig,
+        schemaName: string,
+        schema: any
+    ): Promise<void> {
+        const packagePath = config.packageName.replace(/\./g, '/');
+        
+        // Use the centralized import calculation
+        const imports = this.calculateImports(schema.fields, config.packageName, Array.from(this.entityNames));
+        
+        // Generate simple DTO class
+        const dtoTemplate = await this.templateProvider.readSpringBootTemplate('Dto.java.template');
+        const dtoCompiled = Handlebars.compile(dtoTemplate);
+        const dtoContent = dtoCompiled({
+            packageName: config.packageName,
+            className: schemaName,
+            fields: schema.fields,
+            description: schema.description,
+            imports: imports.join('\n')
+        });
+        
+        const dtoPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'dto', `${schemaName}.java`);
+        await fs.promises.writeFile(dtoPath, dtoContent, 'utf-8');
     }
 
     private async generateController(
@@ -474,6 +582,9 @@ export class SpringBootGenerator {
             logger.warn(`No schema found for ${entityName}, using default fields`);
         }
         
+        // Calculate needed imports based on field types
+        const imports = this.calculateImports(fields, config.packageName, Array.from(this.entityNames));
+        
         // Generate Entity
         const entityTemplate = await this.templateProvider.readSpringBootTemplate('Entity.java.template');
         const entityCompiled = Handlebars.compile(entityTemplate);
@@ -482,7 +593,8 @@ export class SpringBootGenerator {
             className: entityName,
             tableName: resource.toLowerCase(),
             resourceName: resource,
-            fields
+            fields,
+            imports: imports.join('\n')
         });
         const entityPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'entity', `${entityName}.java`);
         await fs.promises.mkdir(path.dirname(entityPath), { recursive: true });
@@ -495,7 +607,8 @@ export class SpringBootGenerator {
             packageName: config.packageName,
             className: entityName + 'Request',
             resourceName: resource,
-            fields
+            fields,
+            imports: imports.join('\n')
         });
         const requestPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'dto', `${entityName}Request.java`);
         await fs.promises.mkdir(path.dirname(requestPath), { recursive: true });
@@ -508,11 +621,140 @@ export class SpringBootGenerator {
             packageName: config.packageName,
             className: entityName + 'Response',
             resourceName: resource,
-            fields
+            fields,
+            imports: imports.join('\n')
         });
         const responsePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'dto', `${entityName}Response.java`);
         await fs.promises.mkdir(path.dirname(responsePath), { recursive: true });
         await fs.promises.writeFile(responsePath, responseContent, 'utf-8');
+    }
+
+    /**
+     * Calculate which imports are needed based on field types
+     * @param fields - Field definitions with types
+     * @param packageName - Base package name
+     * @param entityNames - List of entity class names (imported from entity package)
+     */
+    private calculateImports(fields: any[], packageName: string, entityNames: string[] = []): string[] {
+        const imports: string[] = [];
+        const customTypes = new Set<string>();
+        const entitySet = new Set(entityNames);
+        
+        // Standard library imports
+        const needsListImport = fields.some((f: any) => f.type.includes('List<'));
+        const needsSetImport = fields.some((f: any) => f.type.includes('Set<'));
+        const needsMapImport = fields.some((f: any) => f.type.includes('Map<'));
+        
+        if (needsListImport) {
+            imports.push('import java.util.List;');
+        }
+        if (needsSetImport) {
+            imports.push('import java.util.Set;');
+        }
+        if (needsMapImport) {
+            imports.push('import java.util.Map;');
+        }
+        
+        // Date/time imports - fixed LocalDateTime detection
+        const needsLocalDateTime = fields.some((f: any) => f.type.includes('LocalDateTime'));
+        const needsLocalDate = fields.some((f: any) => f.type.includes('LocalDate') && !f.type.includes('LocalDateTime'));
+        const needsLocalTime = fields.some((f: any) => f.type.includes('LocalTime'));
+        const needsBigDecimal = fields.some((f: any) => f.type.includes('BigDecimal'));
+        
+        if (needsLocalDateTime) {
+            imports.push('import java.time.LocalDateTime;');
+        }
+        if (needsLocalDate) {
+            imports.push('import java.time.LocalDate;');
+        }
+        if (needsLocalTime) {
+            imports.push('import java.time.LocalTime;');
+        }
+        if (needsBigDecimal) {
+            imports.push('import java.math.BigDecimal;');
+        }
+        
+        // Extract custom DTO types from field types
+        const javaBaseTypes = new Set(['String', 'Integer', 'Long', 'Double', 'Float', 'Boolean', 'BigDecimal', 'LocalDateTime', 'LocalDate', 'LocalTime', 'Object']);
+        
+        // Map of Spring Framework and Java standard classes to their import paths
+        const springFrameworkImports: Record<string, string> = {
+            'FieldError': 'import org.springframework.validation.FieldError;',
+            'BindingResult': 'import org.springframework.validation.BindingResult;',
+            'Errors': 'import org.springframework.validation.Errors;',
+            'MultipartFile': 'import org.springframework.web.multipart.MultipartFile;',
+            'HttpServletRequest': 'import jakarta.servlet.http.HttpServletRequest;',
+            'HttpServletResponse': 'import jakarta.servlet.http.HttpServletResponse;',
+            'Principal': 'import java.security.Principal;',
+            'Authentication': 'import org.springframework.security.core.Authentication;'
+        };
+        
+        for (const field of fields) {
+            const extractedTypes = this.extractCustomTypes(field.type);
+            extractedTypes.forEach(type => {
+                // Skip Java base types
+                if (javaBaseTypes.has(type)) {
+                    return;
+                }
+                
+                // Check if it's a Spring Framework class
+                if (springFrameworkImports[type]) {
+                    // Add Spring Framework import
+                    if (!imports.includes(springFrameworkImports[type])) {
+                        imports.push(springFrameworkImports[type]);
+                    }
+                } else if (entitySet.has(type)) {
+                    // It's an entity class - import from entity package
+                    customTypes.add(`entity:${type}`);
+                } else {
+                    // It's a DTO class - import from dto package
+                    customTypes.add(`dto:${type}`);
+                }
+            });
+        }
+        
+        // Add imports for custom types (entities and DTOs)
+        for (const customType of Array.from(customTypes).sort()) {
+            if (customType.startsWith('entity:')) {
+                const typeName = customType.substring(7);
+                imports.push(`import ${packageName}.entity.${typeName};`);
+                logger.info(`Adding entity import: ${packageName}.entity.${typeName}`);
+            } else if (customType.startsWith('dto:')) {
+                const typeName = customType.substring(4);
+                imports.push(`import ${packageName}.dto.${typeName};`);
+            }
+        }
+        
+        return imports;
+    }
+
+    /**
+     * Extract custom type names from a Java type string
+     * Examples:
+     *   "CategorySummary" -> ["CategorySummary"]
+     *   "List<CategorySummary>" -> ["CategorySummary"]
+     *   "Map<String, TagSummary>" -> ["TagSummary"]
+     *   "List<List<Address>>" -> ["Address"]
+     */
+    private extractCustomTypes(typeString: string): string[] {
+        const types: string[] = [];
+        
+        // Remove collection wrappers and extract inner types
+        // Match anything that looks like a type name (PascalCase identifier)
+        const typePattern = /\b[A-Z][a-zA-Z0-9]*\b/g;
+        const matches = typeString.match(typePattern);
+        
+        if (matches) {
+            // Filter out collection type names
+            const collectionTypes = new Set(['List', 'Set', 'Map', 'Optional', 'Collection']);
+            for (const match of matches) {
+                if (!collectionTypes.has(match)) {
+                    types.push(match);
+                }
+            }
+        }
+        
+        return types;
     }
 
     /**
@@ -593,7 +835,7 @@ export class SpringBootGenerator {
         return 'aeiouAEIOU'.includes(char);
     }
 
-    private async generateTestScaffolding(projectPath: string, config: SpringBootProjectConfig, resources: string[]): Promise<void> {
+    private async generateTestScaffolding(projectPath: string, config: SpringBootProjectConfig, resources: string[], schemas: Record<string, any>): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         
         // Generate ApplicationTests
@@ -609,8 +851,9 @@ export class SpringBootGenerator {
         
         // Generate Controller and Service tests for each resource
         for (const resource of resources) {
-            await this.generateControllerTest(projectPath, config, resource);
-            await this.generateServiceTest(projectPath, config, resource);
+            const schema = this.findSchemaForResource(resource, schemas);
+            await this.generateControllerTest(projectPath, config, resource, schema);
+            await this.generateServiceTest(projectPath, config, resource, schema);
         }
     }
 
@@ -633,10 +876,29 @@ export class SpringBootGenerator {
         await fs.promises.writeFile(path.join(projectPath, '.gitignore'), template, 'utf-8');
     }
 
-    private async generateControllerTest(projectPath: string, config: SpringBootProjectConfig, resource: string): Promise<void> {
+    private async generateControllerTest(projectPath: string, config: SpringBootProjectConfig, resource: string, schema?: any): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const entityName = this.toPascalCase(resource);
         const className = entityName + 'ControllerTest';
+        
+        // Use actual schema fields, or fallback to default
+        let fields = [
+            { name: 'name', type: 'String' },
+            { name: 'description', type: 'String' }
+        ];
+        if (schema && schema.fields && schema.fields.length > 0) {
+            // Use all non-ID, non-system fields from schema
+            fields = schema.fields.filter((f: any) => {
+                const fieldName = f.name.toLowerCase();
+                // Exclude ID and timestamp fields (usually readOnly/system fields)
+                return fieldName !== 'id' && 
+                       fieldName !== 'createdat' && 
+                       fieldName !== 'updatedat';
+            });
+            if (fields.length === 0) {
+                fields = [{ name: 'name', type: 'String' }, { name: 'description', type: 'String' }];
+            }
+        }
         
         const template = await this.templateProvider.readSpringBootTemplate('ControllerTest.java.template');
         const compiled = Handlebars.compile(template);
@@ -647,10 +909,7 @@ export class SpringBootGenerator {
             entityName: entityName,
             resourceName: resource,
             serviceName: entityName + 'Service',
-            fields: [
-                { name: 'name', type: 'String' },
-                { name: 'description', type: 'String' }
-            ]
+            fields
         });
 
         const testDir = path.join(projectPath, 'src', 'test', 'java', packagePath, 'controller');
@@ -659,10 +918,28 @@ export class SpringBootGenerator {
         await fs.promises.writeFile(filePath, content, 'utf-8');
     }
 
-    private async generateServiceTest(projectPath: string, config: SpringBootProjectConfig, resource: string): Promise<void> {
+    private async generateServiceTest(projectPath: string, config: SpringBootProjectConfig, resource: string, schema?: any): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const entityName = this.toPascalCase(resource);
         const className = entityName + 'ServiceTest';
+        
+        // Use actual schema fields, or fallback to default
+        let fields = [
+            { name: 'name', type: 'String' },
+            { name: 'description', type: 'String' }
+        ];
+        if (schema && schema.fields && schema.fields.length > 0) {
+            // Use all non-ID, non-system fields from schema
+            fields = schema.fields.filter((f: any) => {
+                const fieldName = f.name.toLowerCase();
+                return fieldName !== 'id' && 
+                       fieldName !== 'createdat' && 
+                       fieldName !== 'updatedat';
+            });
+            if (fields.length === 0) {
+                fields = [{ name: 'name', type: 'String' }, { name: 'description', type: 'String' }];
+            }
+        }
         
         const template = await this.templateProvider.readSpringBootTemplate('ServiceTest.java.template');
         const compiled = Handlebars.compile(template);
@@ -673,10 +950,7 @@ export class SpringBootGenerator {
             entityName: entityName,
             resourceName: resource,
             repositoryName: entityName + 'Repository',
-            fields: [
-                { name: 'name', type: 'String' },
-                { name: 'description', type: 'String' }
-            ]
+            fields
         });
 
         const testDir = path.join(projectPath, 'src', 'test', 'java', packagePath, 'service');
