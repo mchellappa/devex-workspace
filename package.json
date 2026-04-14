@@ -2,7 +2,7 @@
   "name": "devex-ai-assistant",
   "displayName": "Spec2PR",
   "description": "Complete SDLC acceleration platform: LLD review, OpenAPI generation, Spring Boot code generation, deployment automation, and productivity analytics. AI-powered by GitHub Copilot.",
-  "version": "1.8.24",
+  "version": "1.9.0",
   "publisher": "CodeSamurai",
   "icon": "images/icon.png",
   "private": true,
@@ -147,6 +147,12 @@
         "title": "Generate Key Design Document (KDD)",
         "category": "DevEx",
         "icon": "$(file-text)"
+      },
+      {
+        "command": "devex.generateCALMArchitecture",
+        "title": "Generate CALM Architecture from Jira Story",
+        "category": "DevEx",
+        "icon": "$(graph)"
       },
       {
         "command": "devex.createJiraStoryFromLLD",
