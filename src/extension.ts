@@ -14,6 +14,7 @@ import { fetchMyJiraTicketsCommand } from './commands/fetchMyJiraTickets';
 import { analyzeJiraTicketCommand } from './commands/analyzeJiraTicket';
 import { addJiraCommentCommand } from './commands/addJiraComment';
 import { generateKDD } from './commands/generateKDD';
+import { generateRCA } from './commands/generateRCA';
 import { createJiraStoryFromLLD } from './commands/createJiraStoryFromLLD';
 import { implementJiraStory } from './commands/implementJiraStory';
 import { completeJiraStory } from './commands/completeJiraStory';
@@ -23,6 +24,7 @@ import { analyzeERDCommand } from './commands/analyzeERD';
 import { generateDomainDrivenAPIsCommand } from './commands/generateDomainDrivenAPIs';
 import { generateUnitTestsCommand, generateTestsForProjectCommand } from './commands/generateUnitTests';
 import { validateGeneratedCode } from './commands/validateGeneratedCode';
+import { generateCALMArchitectureCommand } from './commands/generateCALMArchitecture';
 import { TelemetryService } from './services/telemetryService';
 import { checkForUpdatesCommand } from './commands/checkForUpdates';
 import { registerChatParticipant } from './chatParticipant';
@@ -135,6 +137,18 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('devex.generateKDD', () => 
             generateKDD(context)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateRCA', () => 
+            generateRCA(context)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateCALMArchitecture', (issueKey?: string) => 
+            generateCALMArchitectureCommand(context, telemetryService, issueKey)
         )
     );
 

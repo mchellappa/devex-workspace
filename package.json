@@ -149,6 +149,12 @@
         "icon": "$(file-text)"
       },
       {
+        "command": "devex.generateRCA",
+        "title": "Generate Root Cause Analysis (RCA)",
+        "category": "DevEx",
+        "icon": "$(search)"
+      },
+      {
         "command": "devex.generateCALMArchitecture",
         "title": "Generate CALM Architecture from Jira Story",
         "category": "DevEx",
