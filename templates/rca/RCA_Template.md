@@ -1,5 +1,9 @@
 # 🔍 Root Cause Analysis (RCA)
 
+> **Executive Summary**: {EXECUTIVE_SUMMARY}
+
+---
+
 ## 📊 Incident Overview
 
 | Field | Value |
@@ -45,6 +49,12 @@
 - **Time to Resolve (TTR)**: {TTR_MINUTES} minutes
 - **Total Downtime**: {TOTAL_DOWNTIME} minutes
 
+### 💰 Business Impact Metrics
+- **Total Incident Cost**: {TOTAL_INCIDENT_COST}
+- **Engineering Hours Spent**: {ENGINEERING_HOURS}
+- **Business Opportunity Cost**: {OPPORTUNITY_COST}
+- **Severity Justification**: {SEVERITY_JUSTIFICATION}
+
 ---
 
 ## 💥 Impact Assessment
@@ -81,6 +91,9 @@
 ### Contributing Factors
 {CONTRIBUTING_FACTORS}
 
+### 🎯 AI-Enhanced Root Cause Insights
+{AI_ENHANCED_INSIGHTS}
+
 ---
 
 ## 🛠️ Resolution Actions Taken
@@ -97,6 +110,32 @@
 
 ### Short-term Actions (1-2 weeks)
 {SHORT_TERM_ACTIONS}
+
+### 🔮 Strategic Recommendations (AI-Generated)
+{STRATEGIC_RECOMMENDATIONS}
+
+---
+
+## ⚠️ Risk Assessment & Prevention Strategy
+
+### Recurrence Risk
+{RECURRENCE_RISK}
+
+### Prevention Strategy
+{PREVENTION_STRATEGY}
+
+### Monitoring Enhancements
+{MONITORING_ENHANCEMENTS}
+
+---
+
+## 📈 Comparative Analysis
+
+### Industry Benchmarks
+{INDUSTRY_BENCHMARKS}
+
+### Similar Incidents
+{SIMILAR_INCIDENTS}
 
 ### Long-term Prevention (1-3 months)
 {LONG_TERM_ACTIONS}

@@ -67,6 +67,20 @@ interface RCAContext {
     relatedDocs?: string;
     logsEvidence?: string;
     externalRefs?: string;
+    
+    // AI-Enhanced sections
+    executiveSummary?: string;
+    totalIncidentCost?: string;
+    engineeringHours?: string;
+    opportunityCost?: string;
+    severityJustification?: string;
+    aiEnhancedInsights?: string;
+    strategicRecommendations?: string;
+    recurrenceRisk?: string;
+    preventionStrategy?: string;
+    monitoringEnhancements?: string;
+    industryBenchmarks?: string;
+    similarIncidents?: string;
 }
 
 export async function generateRCA(context: vscode.ExtensionContext): Promise<void> {
@@ -117,8 +131,12 @@ export async function generateRCA(context: vscode.ExtensionContext): Promise<voi
             progress.report({ increment: 80, message: 'Documenting lessons learned...' });
             await gatherLessonsLearned(rcaContext);
 
-            // Step 8: Generate RCA document
-            progress.report({ increment: 90, message: 'Generating RCA document...' });
+            // Step 8: AI-Enhanced Analysis
+            progress.report({ increment: 85, message: 'Generating AI-enhanced insights...' });
+            await generateAIEnhancedSections(rcaContext);
+
+            // Step 9: Generate RCA document
+            progress.report({ increment: 95, message: 'Generating RCA document...' });
             await generateRCADocument(rcaContext, context);
 
             progress.report({ increment: 100, message: 'Complete!' });
@@ -527,6 +545,299 @@ async function gatherLessonsLearned(rcaContext: RCAContext): Promise<void> {
     });
 }
 
+async function generateAIEnhancedSections(rcaContext: RCAContext): Promise<void> {
+    try {
+        const models = await vscode.lm.selectChatModels({
+            vendor: 'copilot',
+            family: 'gpt-4o'
+        });
+
+        if (models.length === 0) {
+            console.warn('No AI models available for enhanced analysis');
+            return;
+        }
+
+        const model = models[0];
+
+        // Generate all AI-enhanced sections in parallel for efficiency
+        await Promise.all([
+            generateExecutiveSummary(model, rcaContext),
+            calculateBusinessImpact(model, rcaContext),
+            generateEnhancedInsights(model, rcaContext),
+            generateStrategicRecommendations(model, rcaContext),
+            generateRiskAndPrevention(model, rcaContext),
+            generateBenchmarksAndComparisons(model, rcaContext)
+        ]);
+    } catch (error) {
+        console.error('Error generating AI-enhanced sections:', error);
+        // Continue with document generation even if AI enhancement fails
+    }
+}
+
+async function generateExecutiveSummary(model: vscode.LanguageModelChat, rcaContext: RCAContext): Promise<void> {
+    try {
+        const prompt = `You are an executive communication expert. Create a concise 2-3 sentence executive summary for this incident RCA that leadership can read in 30 seconds.
+
+Incident: ${rcaContext.incidentTitle}
+Severity: ${rcaContext.severity}
+Duration: ${rcaContext.ttrMinutes} minutes (${(rcaContext.ttrMinutes || 0 / 60).toFixed(1)} hours)
+Root Cause: ${rcaContext.rootCause}
+Impact: ${rcaContext.businessImpact}
+
+Write a compelling executive summary that includes:
+1. What happened (one sentence)
+2. Business impact (one sentence)
+3. Resolution and prevention (one sentence)
+
+Keep it professional, clear, and suitable for C-level executives.`;
+
+        const messages = [vscode.LanguageModelChatMessage.User(prompt)];
+        const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+
+        let summary = '';
+        for await (const fragment of response.text) {
+            summary += fragment;
+        }
+
+        rcaContext.executiveSummary = summary.trim();
+    } catch (error) {
+        rcaContext.executiveSummary = `${rcaContext.severity} incident affecting ${rcaContext.systemsAffected}. Root cause: ${rcaContext.rootCause}. Resolved after ${rcaContext.ttrMinutes} minutes with actions in place to prevent recurrence.`;
+    }
+}
+
+async function calculateBusinessImpact(model: vscode.LanguageModelChat, rcaContext: RCAContext): Promise<void> {
+    try {
+        const downtimeHours = (rcaContext.totalDowntime || 0) / 60;
+        const engineeringHours = Math.max(downtimeHours, downtimeHours * 2); // Assume 2x for investigation
+
+        const prompt = `You are a business impact analyst. Calculate and explain the business impact of this incident.
+
+Incident: ${rcaContext.incidentTitle}
+Severity: ${rcaContext.severity}
+Downtime: ${rcaContext.totalDowntime} minutes (${downtimeHours.toFixed(1)} hours)
+Type: ${rcaContext.incidentType}
+Business Impact: ${rcaContext.businessImpact}
+Users Affected: ${rcaContext.usersAffected || '0'}
+Revenue Impact: ${rcaContext.revenueImpact || '$0'}
+
+Provide:
+1. **Total Incident Cost**: Estimate total cost (engineering time + lost productivity + revenue impact). Use industry average of $200/hour for engineering time.
+2. **Engineering Hours Spent**: Estimate based on ${downtimeHours.toFixed(1)} hours downtime. Include investigation, resolution, and post-incident work.
+3. **Business Opportunity Cost**: What business opportunities were lost or delayed?
+4. **Severity Justification (${rcaContext.severity})**: Explain why this incident warranted ${rcaContext.severity} severity classification. Reference impact, urgency, and business criticality.
+
+Be specific with numbers and business context. Format with $ signs and round numbers.`;
+
+        const messages = [vscode.LanguageModelChatMessage.User(prompt)];
+        const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+
+        let fullResponse = '';
+        for await (const fragment of response.text) {
+            fullResponse += fragment;
+        }
+
+        // Parse response sections
+        const costMatch = fullResponse.match(/\*\*Total Incident Cost\*\*:(.+?)(?=\n\*\*|$)/s);
+        const hoursMatch = fullResponse.match(/\*\*Engineering Hours Spent\*\*:(.+?)(?=\n\*\*|$)/s);
+        const oppMatch = fullResponse.match(/\*\*Business Opportunity Cost\*\*:(.+?)(?=\n\*\*|$)/s);
+        const sevMatch = fullResponse.match(/\*\*Severity Justification.+?\*\*:(.+?)$/s);
+
+        rcaContext.totalIncidentCost = costMatch ? costMatch[1].trim() : `~$${Math.round(engineeringHours * 200).toLocaleString()} (estimated based on ${Math.round(engineeringHours)} engineering hours)`;
+        rcaContext.engineeringHours = hoursMatch ? hoursMatch[1].trim() : `~${Math.round(engineeringHours)} hours (investigation, resolution, post-incident)`;
+        rcaContext.opportunityCost = oppMatch ? oppMatch[1].trim() : `${rcaContext.businessImpact || 'Impact assessment pending'}`;
+        rcaContext.severityJustification = sevMatch ? sevMatch[1].trim() : `${rcaContext.severity} severity due to ${rcaContext.businessImpact}`;
+    } catch (error) {
+        const downtimeHours = (rcaContext.totalDowntime || 0) / 60;
+        const engineeringHours = Math.max(downtimeHours, downtimeHours * 2);
+        rcaContext.totalIncidentCost = `~$${Math.round(engineeringHours * 200).toLocaleString()}`;
+        rcaContext.engineeringHours = `~${Math.round(engineeringHours)} hours`;
+        rcaContext.opportunityCost = rcaContext.businessImpact || 'To be determined';
+        rcaContext.severityJustification = `${rcaContext.severity} classification based on business impact`;
+    }
+}
+
+async function generateEnhancedInsights(model: vscode.LanguageModelChat, rcaContext: RCAContext): Promise<void> {
+    try {
+        const prompt = `You are a senior site reliability engineer with 15+ years of experience. Provide deep technical insights about this incident that go beyond the surface-level root cause.
+
+Incident: ${rcaContext.incidentTitle}
+Root Cause: ${rcaContext.rootCause}
+Resolution: ${rcaContext.resolutionActions}
+Technical Impact: ${rcaContext.technicalImpact}
+Systems: ${rcaContext.systemsAffected}
+
+Provide AI-enhanced insights covering:
+
+1. **Underlying System Weaknesses**: What systemic issues allowed this to happen?
+2. **Architectural Implications**: How does this incident reveal architectural debt or design flaws?
+3. **Blast Radius Analysis**: How did the failure propagate? What isolation mechanisms failed?
+4. **Detection Gaps**: Why did it take ${rcaContext.ttdMinutes} minutes to detect? What monitoring was missing?
+5. **Hidden Dependencies**: What unexpected dependencies became apparent?
+6. **Cascading Failure Risks**: What other failures could this have triggered?
+
+Write 2-3 paragraphs with deep, actionable technical insights that a leadership audience would value.`;
+
+        const messages = [vscode.LanguageModelChatMessage.User(prompt)];
+        const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+
+        let insights = '';
+        for await (const fragment of response.text) {
+            insights += fragment;
+        }
+
+        rcaContext.aiEnhancedInsights = insights.trim();
+    } catch (error) {
+        rcaContext.aiEnhancedInsights = `This incident revealed systemic issues in ${rcaContext.systemsAffected}. The ${rcaContext.ttdMinutes}-minute detection time indicates gaps in monitoring and alerting. Root cause (${rcaContext.rootCause}) suggests architectural improvements are needed to prevent recurrence.`;
+    }
+}
+
+async function generateStrategicRecommendations(model: vscode.LanguageModelChat, rcaContext: RCAContext): Promise<void> {
+    try {
+        const prompt = `You are a principal architect providing strategic recommendations to leadership after this incident.
+
+Incident: ${rcaContext.incidentTitle}
+Root Cause: ${rcaContext.rootCause}
+What Went Poorly: ${rcaContext.whatWentPoorly}
+What Should Change: ${rcaContext.whatShouldChange}
+Technical Insights: ${rcaContext.technicalInsights}
+
+Provide strategic recommendations (not just tactical fixes):
+
+**Investment Recommendations** (3-6 months):
+- Where should we invest engineering resources?
+- What platform capabilities are missing?
+- What process improvements would have biggest ROI?
+
+**Architectural Modernization**:
+- What architectural patterns would prevent this class of incidents?
+- Should we re-architect certain components?
+- What technical debt should be prioritized?
+
+**Organization & Process**:
+- What team structures or processes should change?
+- Where do we need better expertise or training?
+- How should we improve our incident response?
+
+Write 4-6 specific, actionable recommendations with business justification. Format as a numbered list with bold headers.`;
+
+        const messages = [vscode.LanguageModelChatMessage.User(prompt)];
+        const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+
+        let recommendations = '';
+        for await (const fragment of response.text) {
+            recommendations += fragment;
+        }
+
+        rcaContext.strategicRecommendations = recommendations.trim();
+    } catch (error) {
+        rcaContext.strategicRecommendations = `1. **Invest in Monitoring**: Improve detection capabilities to reduce TTD\n2. **Architectural Review**: Address systemic issues identified in ${rcaContext.systemsAffected}\n3. **Automation**: Implement automated remediation for common failure scenarios\n4. **Knowledge Sharing**: Document and train teams on lessons learned`;
+    }
+}
+
+async function generateRiskAndPrevention(model: vscode.LanguageModelChat, rcaContext: RCAContext): Promise<void> {
+    try {
+        const prompt = `You are a risk management expert analyzing this incident for recurrence probability and prevention strategy.
+
+Incident: ${rcaContext.incidentTitle}
+Root Cause: ${rcaContext.rootCause}
+Resolution: ${rcaContext.resolutionActions}
+Short-term Actions: ${rcaContext.shortTermActions}
+Long-term Actions: ${rcaContext.longTermActions}
+
+Provide three sections:
+
+**1. Recurrence Risk Assessment**:
+- Probability of similar incident happening again (High/Medium/Low)
+- What specific conditions would trigger recurrence?
+- How effective are current mitigations?
+- What's the blast radius if it happens again?
+
+**2. Prevention Strategy**:
+- Multi-layered prevention approach (preventive controls, detective controls, corrective controls)
+- Specific technical controls to implement
+- Process/operational controls needed
+- Validation plan to ensure prevention works
+
+**3. Monitoring Enhancements**:
+- What new alerts/monitors are needed?
+- What SLIs/SLOs should be defined?
+- What dashboards would help detect this faster?
+- How to validate monitoring coverage?
+
+Be specific and technical. Leadership wants to know we won't repeat this mistake.`;
+
+        const messages = [vscode.LanguageModelChatMessage.User(prompt)];
+        const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+
+        let fullResponse = '';
+        for await (const fragment of response.text) {
+            fullResponse += fragment;
+        }
+
+        // Parse sections
+        const riskMatch = fullResponse.match(/\*\*1\.\s*Recurrence Risk Assessment\*\*:(.+?)(?=\*\*2\.|$)/s);
+        const preventionMatch = fullResponse.match(/\*\*2\.\s*Prevention Strategy\*\*:(.+?)(?=\*\*3\.|$)/s);
+        const monitoringMatch = fullResponse.match(/\*\*3\.\s*Monitoring Enhancements\*\*:(.+?)$/s);
+
+        rcaContext.recurrenceRisk = riskMatch ? riskMatch[1].trim() : `Recurrence risk assessment pending full analysis`;
+        rcaContext.preventionStrategy = preventionMatch ? preventionMatch[1].trim() : `Prevention strategy: ${rcaContext.longTermActions}`;
+        rcaContext.monitoringEnhancements = monitoringMatch ? monitoringMatch[1].trim() : `Enhanced monitoring recommended for ${rcaContext.systemsAffected}`;
+    } catch (error) {
+        rcaContext.recurrenceRisk = `Medium risk. Root cause (${rcaContext.rootCause}) could recur without proper controls.`;
+        rcaContext.preventionStrategy = `Implement short-term fixes (${rcaContext.shortTermActions}) and long-term prevention (${rcaContext.longTermActions}).`;
+        rcaContext.monitoringEnhancements = `Enhance monitoring for ${rcaContext.systemsAffected} to reduce time-to-detect.`;
+    }
+}
+
+async function generateBenchmarksAndComparisons(model: vscode.LanguageModelChat, rcaContext: RCAContext): Promise<void> {
+    try {
+        const prompt = `You are an industry analyst comparing this incident to industry standards and best practices.
+
+Incident Metrics:
+- Time to Detect: ${rcaContext.ttdMinutes} minutes
+- Time to Resolve: ${rcaContext.ttrMinutes} minutes
+- Severity: ${rcaContext.severity}
+- Type: ${rcaContext.incidentType}
+
+Provide two sections:
+
+**1. Industry Benchmarks**:
+Compare our metrics to industry standards:
+- How does our TTD compare to industry average for ${rcaContext.severity} incidents?
+- How does our TTR compare?
+- What's the industry target for MTTR (Mean Time to Recovery)?
+- How do mature SRE organizations handle similar incidents?
+- Cite specific benchmarks (e.g., "Google SRE recommends X", "Industry average for P1 is Y minutes")
+
+**2. Pattern Recognition - Similar Incidents**:
+Based on the root cause "${rcaContext.rootCause}", describe:
+- Common patterns in similar incidents across the industry
+- What other companies have learned from similar failures
+- References to public postmortems or case studies 
+- Best practices from companies who solved this class of problem
+
+Use real industry data and references where possible.`;
+
+        const messages = [vscode.LanguageModelChatMessage.User(prompt)];
+        const response = await model.sendRequest(messages, {}, new vscode.CancellationTokenSource().token);
+
+        let fullResponse = '';
+        for await (const fragment of response.text) {
+            fullResponse += fragment;
+        }
+
+        // Parse sections
+        const benchmarkMatch = fullResponse.match(/\*\*1\.\s*Industry Benchmarks\*\*:(.+?)(?=\*\*2\.|$)/s);
+        const similarMatch = fullResponse.match(/\*\*2\.\s*Pattern Recognition.+?\*\*:(.+?)$/s);
+
+        rcaContext.industryBenchmarks = benchmarkMatch ? benchmarkMatch[1].trim() : `Industry benchmarks for ${rcaContext.severity} severity incidents suggest targeting <15 min TTD and <60 min TTR.`;
+        rcaContext.similarIncidents = similarMatch ? similarMatch[1].trim() : `Similar incidents involving ${rcaContext.rootCause} are documented in industry postmortems. Best practices recommend proactive monitoring and automation.`;
+    } catch (error) {
+        rcaContext.industryBenchmarks = `For ${rcaContext.severity} incidents, industry targets: TTD <15 min, TTR <60 min. Our metrics: TTD ${rcaContext.ttdMinutes} min, TTR ${rcaContext.ttrMinutes} min.`;
+        rcaContext.similarIncidents = `Similar root causes (${rcaContext.rootCause}) are common in the industry. Recommended practices include enhanced monitoring and automated remediation.`;
+    }
+}
+
 async function generateRCADocument(rcaContext: RCAContext, context: vscode.ExtensionContext): Promise<void> {
     const templatePath = path.join(context.extensionPath, 'templates', 'rca', 'RCA_Template.md');
     let template = fs.readFileSync(templatePath, 'utf-8');
@@ -584,7 +895,20 @@ async function generateRCADocument(rcaContext: RCAContext, context: vscode.Exten
         '{SIGNOFF_DATE}': new Date().toISOString().split('T')[0],
         '{REVIEW_DATE}': '[Pending]',
         '{APPROVAL_DATE}': '[Pending]',
-        '{GENERATION_DATE}': new Date().toLocaleString()
+        '{GENERATION_DATE}': new Date().toLocaleString(),
+        // AI-Enhanced sections
+        '{EXECUTIVE_SUMMARY}': rcaContext.executiveSummary || 'To be added',
+        '{TOTAL_INCIDENT_COST}': rcaContext.totalIncidentCost || 'To be calculated',
+        '{ENGINEERING_HOURS}': rcaContext.engineeringHours || 'To be calculated',
+        '{OPPORTUNITY_COST}': rcaContext.opportunityCost || 'To be determined',
+        '{SEVERITY_JUSTIFICATION}': rcaContext.severityJustification || 'To be documented',
+        '{AI_ENHANCED_INSIGHTS}': rcaContext.aiEnhancedInsights || 'Analysis pending',
+        '{STRATEGIC_RECOMMENDATIONS}': rcaContext.strategicRecommendations || 'To be developed',
+        '{RECURRENCE_RISK}': rcaContext.recurrenceRisk || 'Assessment pending',
+        '{PREVENTION_STRATEGY}': rcaContext.preventionStrategy || 'To be defined',
+        '{MONITORING_ENHANCEMENTS}': rcaContext.monitoringEnhancements || 'Recommendations pending',
+        '{INDUSTRY_BENCHMARKS}': rcaContext.industryBenchmarks || 'Comparison pending',
+        '{SIMILAR_INCIDENTS}': rcaContext.similarIncidents || 'Research pending'
     };
 
     for (const [placeholder, value] of Object.entries(replacements)) {
