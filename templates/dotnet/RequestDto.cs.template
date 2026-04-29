@@ -1,0 +1,15 @@
+using System.ComponentModel.DataAnnotations;
+
+namespace {{namespace}}.DTOs;
+
+public class {{className}}Request
+{
+    [Required(ErrorMessage = "Name is required")]
+    [StringLength(100, ErrorMessage = "Name cannot exceed 100 characters")]
+    public string Name { get; set; } = string.Empty;
+
+    [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters")]
+    public string? Description { get; set; }
+
+    // Add your request properties here
+}

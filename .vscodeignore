@@ -8,3 +8,9 @@ vsc-extension-quickstart.md
 **/.eslintrc.json
 **/*.map
 **/*.ts
+examples/**
+.validation-output/**
+scripts/**
+.venv/**
+.devex/**
+.github/**

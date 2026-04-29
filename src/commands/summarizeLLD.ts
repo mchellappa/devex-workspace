@@ -1,9 +1,8 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as mammoth from 'mammoth';
 import { AIService } from '../services/aiService';
 import { TelemetryService } from '../services/telemetryService';
 import { logger } from '../utils/logger';
+import { extractDocxWithImages, analyzeImagesWithVision } from '../utils/imageAnalyzer';
 
 export async function summarizeLLDCommand(
     context: vscode.ExtensionContext,
@@ -62,14 +61,20 @@ export async function summarizeLLDCommand(
         }
 
         let content: string;
+        let imageAnalysis = '';
 
         // Extract content based on file type
         if (fileExtension.toLowerCase() === '.docx') {
-            // For .docx files, extract text using mammoth
+            // For .docx files, extract text and images using mammoth
             try {
-                const result = await mammoth.extractRawText({ path: filePath });
-                content = result.value;
-                logger.info(`Extracted ${content.length} characters from .docx file`);
+                const result = await extractDocxWithImages(filePath);
+                content = result.content;
+                
+                // Analyze images if present
+                if (result.images.length > 0) {
+                    logger.info(`Found ${result.images.length} images, analyzing...`);
+                    imageAnalysis = await analyzeImagesWithVision(result.images, 'general');
+                }
             } catch (error: any) {
                 throw new Error(`Failed to read .docx file: ${error.message}`);
             }
@@ -88,7 +93,13 @@ export async function summarizeLLDCommand(
                 progress.report({ increment: 0, message: 'Analyzing document with AI...' });
 
                 const aiService = new AIService();
-                const summary = await aiService.summarizeLLD(content);
+                
+                // Combine content with image analysis if available
+                const fullContent = imageAnalysis ? 
+                    `${content}\n\n## Additional Information from Images/Diagrams:\n${imageAnalysis}` : 
+                    content;
+                
+                const summary = await aiService.summarizeLLD(fullContent);
 
                 progress.report({ increment: 100, message: 'Summary generated!' });
 

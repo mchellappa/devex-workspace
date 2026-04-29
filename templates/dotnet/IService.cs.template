@@ -1,0 +1,12 @@
+using {{namespace}}.DTOs;
+
+namespace {{namespace}}.Services;
+
+public interface I{{className}}
+{
+    Task<IEnumerable<{{className}}Response>> GetAllAsync();
+    Task<{{className}}Response?> GetByIdAsync(int id);
+    Task<{{className}}Response> CreateAsync({{className}}Request request);
+    Task<{{className}}Response?> UpdateAsync(int id, {{className}}Request request);
+    Task<bool> DeleteAsync(int id);
+}

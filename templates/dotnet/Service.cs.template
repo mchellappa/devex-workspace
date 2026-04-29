@@ -1,0 +1,93 @@
+using {{namespace}}.Data;
+using {{namespace}}.DTOs;
+using {{namespace}}.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace {{namespace}}.Services;
+
+public class {{className}} : I{{className}}
+{
+    private readonly IRepository<{{entityName}}> _repository;
+    private readonly ILogger<{{className}}> _logger;
+
+    public {{className}}(
+        IRepository<{{entityName}}> repository,
+        ILogger<{{className}}> logger)
+    {
+        _repository = repository;
+        _logger = logger;
+    }
+
+    public async Task<IEnumerable<{{className}}Response>> GetAllAsync()
+    {
+        _logger.LogInformation("Getting all {{className}} items");
+        var items = await _repository.GetAllAsync();
+        return items.Select(MapToResponse);
+    }
+
+    public async Task<{{className}}Response?> GetByIdAsync(int id)
+    {
+        _logger.LogInformation("Getting {{className}} with ID: {Id}", id);
+        var item = await _repository.GetByIdAsync(id);
+        return item != null ? MapToResponse(item) : null;
+    }
+
+    public async Task<{{className}}Response> CreateAsync({{className}}Request request)
+    {
+        _logger.LogInformation("Creating new {{className}}");
+        
+        var entity = new {{entityName}}
+        {
+            Name = request.Name,
+            Description = request.Description,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var created = await _repository.AddAsync(entity);
+        return MapToResponse(created);
+    }
+
+    public async Task<{{className}}Response?> UpdateAsync(int id, {{className}}Request request)
+    {
+        _logger.LogInformation("Updating {{className}} with ID: {Id}", id);
+        
+        var existing = await _repository.GetByIdAsync(id);
+        if (existing == null)
+        {
+            return null;
+        }
+
+        existing.Name = request.Name;
+        existing.Description = request.Description;
+        existing.UpdatedAt = DateTime.UtcNow;
+
+        await _repository.UpdateAsync(existing);
+        return MapToResponse(existing);
+    }
+
+    public async Task<bool> DeleteAsync(int id)
+    {
+        _logger.LogInformation("Deleting {{className}} with ID: {Id}", id);
+        
+        var existing = await _repository.GetByIdAsync(id);
+        if (existing == null)
+        {
+            return false;
+        }
+
+        await _repository.DeleteAsync(existing);
+        return true;
+    }
+
+    private static {{className}}Response MapToResponse({{entityName}} entity)
+    {
+        return new {{className}}Response
+        {
+            Id = entity.Id,
+            Name = entity.Name,
+            Description = entity.Description,
+            CreatedAt = entity.CreatedAt,
+            UpdatedAt = entity.UpdatedAt
+        };
+    }
+}

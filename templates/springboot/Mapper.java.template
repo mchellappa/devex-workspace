@@ -1,0 +1,37 @@
+package {{packageName}}.mapper;
+
+import {{packageName}}.entity.{{entityName}};
+import {{packageName}}.dto.{{entityName}}Request;
+import {{packageName}}.dto.{{entityName}}Response;
+import org.mapstruct.Mapper;
+import org.mapstruct.MappingTarget;
+import org.mapstruct.NullValuePropertyMappingStrategy;
+import org.mapstruct.ReportingPolicy;
+
+/**
+ * MapStruct mapper for {{entityName}} entity and DTOs
+ * Automatically generates mapping implementations at compile time
+ */
+@Mapper(
+    componentModel = "spring",
+    unmappedTargetPolicy = ReportingPolicy.IGNORE,
+    nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE
+)
+public interface {{className}} {
+    
+    /**
+     * Convert entity to response DTO
+     */
+    {{entityName}}Response toResponse({{entityName}} entity);
+    
+    /**
+     * Convert request DTO to entity (for create operations)
+     */
+    {{entityName}} toEntity({{entityName}}Request request);
+    
+    /**
+     * Update existing entity from request DTO (for update operations)
+     * Null values in request are ignored (won't overwrite existing values)
+     */
+    void updateEntityFromRequest({{entityName}}Request request, @MappingTarget {{entityName}} entity);
+}

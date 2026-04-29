@@ -5,20 +5,17 @@ import * as os from 'os';
 import { ProductivityMetric, MetricsCalculator } from '../utils/metricsCalculator';
 import { getConfig } from '../utils/config';
 import { logger } from '../utils/logger';
+import { getDevExStateManager } from './devexStateManager';
 
 export class TelemetryService {
     private context: vscode.ExtensionContext;
     private metricsFilePath: string;
+    private stateManager = getDevExStateManager();
 
     constructor(context: vscode.ExtensionContext) {
         this.context = context;
-        // Store metrics in user's home directory
-        const homeDir = os.homedir();
-        const devexDir = path.join(homeDir, '.devex-ai-assistant');
-        if (!fs.existsSync(devexDir)) {
-            fs.mkdirSync(devexDir, { recursive: true });
-        }
-        this.metricsFilePath = path.join(devexDir, 'metrics.json');
+        // Use .devex folder in user's home directory
+        this.metricsFilePath = this.stateManager.getMetricsPath();
     }
 
     trackEvent(eventName: string, properties?: Record<string, any>): void {
@@ -27,6 +24,8 @@ export class TelemetryService {
             return;
         }
 
+        // Log to activity log in .devex folder
+        this.stateManager.logCommand(eventName, properties);
         logger.info(`Event: ${eventName}${properties ? ' - ' + JSON.stringify(properties) : ''}`);
     }
 

@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as mammoth from 'mammoth';
 import { AIService } from '../services/aiService';
 import { TelemetryService } from '../services/telemetryService';
 import { logger } from '../utils/logger';
+import { extractDocxWithImages, analyzeImagesWithVision, ExtractedImage } from '../utils/imageAnalyzer';
 
 export async function generateOpenAPISpecCommand(
     context: vscode.ExtensionContext,
@@ -57,13 +57,15 @@ export async function generateOpenAPISpecCommand(
         }
 
         let content: string;
+        let images: ExtractedImage[] = [];
 
         // Extract content based on file type
         if (fileExtension.toLowerCase() === '.docx') {
             try {
-                const result = await mammoth.extractRawText({ path: filePath });
-                content = result.value;
-                logger.info(`Extracted ${content.length} characters from .docx file`);
+                // Extract both content and images using shared utility
+                const result = await extractDocxWithImages(filePath);
+                content = result.content;
+                images = result.images;
             } catch (error: any) {
                 throw new Error(`Failed to read .docx file: ${error.message}`);
             }
@@ -87,7 +89,23 @@ export async function generateOpenAPISpecCommand(
                 progress.report({ increment: 0, message: 'Analyzing LLD with AI...' });
 
                 const aiService = new AIService();
-                const openAPISpec = await aiService.generateOpenAPISpec(content, apiInfo);
+                
+                // If we have images, analyze them first to extract relevant information
+                let imageAnalysis = '';
+                if (images.length > 0) {
+                    progress.report({ increment: 20, message: `Analyzing ${images.length} images (diagrams/charts)...` });
+                    imageAnalysis = await analyzeImagesWithVision(images, 'api');
+                    logger.info(`Image analysis completed: ${imageAnalysis.length} characters`);
+                }
+                
+                progress.report({ increment: 40, message: 'Generating OpenAPI spec...' });
+                
+                // Combine content with image analysis
+                const fullContent = imageAnalysis ? 
+                    `${content}\n\n## Additional Information from Images/Diagrams:\n${imageAnalysis}` : 
+                    content;
+                
+                const openAPISpec = await aiService.generateOpenAPISpec(fullContent, apiInfo);
 
                 progress.report({ increment: 80, message: 'Validating OpenAPI spec...' });
 
@@ -303,3 +321,9 @@ async function showSpecPreview(spec: string, format: 'yaml' | 'json'): Promise<v
         }
     });
 }
+
+/**
+ * Analyzes images extracted from DOCX files to extract API-relevant information.
+ * This is particularly useful for Lucid charts, architecture diagrams, and flow diagrams.
+ */
+

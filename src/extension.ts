@@ -8,19 +8,53 @@ import { generateOpenAPISpecCommand } from './commands/generateOpenAPISpec';
 import { insertDeploymentTemplateCommand } from './commands/insertDeploymentTemplate';
 import { addEndpointCommand } from './commands/addEndpoint';
 import { viewDashboardCommand } from './commands/viewDashboard';
+import { validateLLDAgainstJiraCommand } from './commands/validateLLDAgainstJira';
+import { generateLLDFromRequirementsCommand } from './commands/generateLLDFromRequirements';
+import { fetchMyJiraTicketsCommand } from './commands/fetchMyJiraTickets';
+import { analyzeJiraTicketCommand } from './commands/analyzeJiraTicket';
+import { addJiraCommentCommand } from './commands/addJiraComment';
+import { generateKDD } from './commands/generateKDD';
+import { generateRCA } from './commands/generateRCA';
+import { createJiraStoryFromLLD } from './commands/createJiraStoryFromLLD';
+import { implementJiraStory } from './commands/implementJiraStory';
+import { completeJiraStory } from './commands/completeJiraStory';
+import { resumeJiraStoryCompletion } from './commands/resumeJiraStoryCompletion';
+import { convertMarkdownCommand } from './commands/convertMarkdown';
+import { analyzeERDCommand } from './commands/analyzeERD';
+import { generateDomainDrivenAPIsCommand } from './commands/generateDomainDrivenAPIs';
+import { generateUnitTestsCommand, generateTestsForProjectCommand } from './commands/generateUnitTests';
+import { validateGeneratedCode } from './commands/validateGeneratedCode';
+import { generateCALMArchitectureCommand } from './commands/generateCALMArchitecture';
 import { TelemetryService } from './services/telemetryService';
 import { checkForUpdatesCommand } from './commands/checkForUpdates';
+import { registerChatParticipant } from './chatParticipant';
+import { registerDevExTools } from './tools/devexToolsRegistration';
+import { verifyToolRegistration } from './commands/diagnosticTools';
+import { generateAgentCommand } from './commands/generateAgent';
+import { generateSkillCommand } from './commands/generateSkill';
+import { manageDeployedAgentsCommand } from './commands/manageDeployedAgents';
+import * as path from 'path';
+import * as fs from 'fs';
 
 let telemetryService: TelemetryService;
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
     console.log('DevEx AI Assistant is now active!');
 
     // Initialize telemetry service
     telemetryService = new TelemetryService(context);
 
+    // Register chat participant (@askcodesamurai)
+    registerChatParticipant(context, telemetryService);
+
+    // Register Language Model Tools for AI assistants
+    registerDevExTools(context);
+
     // Check if Copilot is available
     checkCopilotAvailability();
+
+    // Auto-initialize Code Samurai agent and workspace settings
+    await initializeCodeSamuraiAgent(context);
 
     // Register all commands
     context.subscriptions.push(
@@ -83,6 +117,138 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.validateLLDAgainstJira', (fileUri?: vscode.Uri) => 
+            validateLLDAgainstJiraCommand(context, telemetryService, fileUri)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateLLDFromRequirements', (fileUri?: vscode.Uri) => 
+            generateLLDFromRequirementsCommand(context, telemetryService, fileUri)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.fetchMyJiraTickets', () => 
+            fetchMyJiraTicketsCommand(context, telemetryService)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.analyzeJiraTicket', (issueKey?: string) => 
+            analyzeJiraTicketCommand(context, telemetryService, issueKey)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.addJiraComment', (issueKey?: string) => 
+            addJiraCommentCommand(context, telemetryService, issueKey)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateKDD', () => 
+            generateKDD(context)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateRCA', () => 
+            generateRCA(context)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateCALMArchitecture', (issueKey?: string) => 
+            generateCALMArchitectureCommand(context, telemetryService, issueKey)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.createJiraStoryFromLLD', (fileUri?: vscode.Uri) => 
+            createJiraStoryFromLLD(context, telemetryService, fileUri)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.implementJiraStory', (issueKey?: string) => 
+            implementJiraStory(context, telemetryService, issueKey)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.completeJiraStory', (issueKey?: string) => 
+            completeJiraStory(context, telemetryService, issueKey)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.resumeJiraStoryCompletion', () => 
+            resumeJiraStoryCompletion(context, telemetryService)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.convertMarkdown', (fileUri?: vscode.Uri) => 
+            convertMarkdownCommand(context, telemetryService, fileUri)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.analyzeERD', (fileUri?: vscode.Uri) => 
+            analyzeERDCommand(fileUri)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateDomainDrivenAPIs', () => 
+            generateDomainDrivenAPIsCommand()
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateUnitTests', () => 
+            generateUnitTestsCommand()
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateTestsForProject', () => 
+            generateTestsForProjectCommand()
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.validateGeneratedCode', () => 
+            validateGeneratedCode(context)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.verifyToolRegistration', () => 
+            verifyToolRegistration(context)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateAgent', () =>
+            generateAgentCommand(context, telemetryService)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.generateSkill', () =>
+            generateSkillCommand(context, telemetryService)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.manageDeployedAgents', () =>
+            manageDeployedAgentsCommand(context, telemetryService)
+        )
+    );
+
     // Show welcome message on first activation
     showWelcomeMessage(context);
 
@@ -91,6 +257,76 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Track activation
     telemetryService.trackEvent('extension.activated');
+}
+
+/**
+ * Auto-initialize Code Samurai agent in the workspace.
+ * Creates .github/agents/code-samurai.agent.md if it doesn't exist.
+ * Also ensures workspace settings have the required Copilot setting.
+ */
+async function initializeCodeSamuraiAgent(context: vscode.ExtensionContext): Promise<void> {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+        console.log('No workspace folder found, skipping Code Samurai initialization');
+        return;
+    }
+
+    try {
+        const workspacePath = workspaceFolder.uri.fsPath;
+        
+        // 1. Ensure .github/agents/ directory exists
+        const agentsDir = path.join(workspacePath, '.github', 'agents');
+        if (!fs.existsSync(agentsDir)) {
+            fs.mkdirSync(agentsDir, { recursive: true });
+            console.log('Created .github/agents/ directory');
+        }
+
+        // 2. Create code-samurai.agent.md if it doesn't exist
+        const agentFilePath = path.join(agentsDir, 'code-samurai.agent.md');
+        if (!fs.existsSync(agentFilePath)) {
+            // Read template from extension
+            const templatePath = path.join(context.extensionPath, 'templates', 'agents', 'code-samurai.agent.md');
+            
+            if (fs.existsSync(templatePath)) {
+                const templateContent = fs.readFileSync(templatePath, 'utf8');
+                fs.writeFileSync(agentFilePath, templateContent, 'utf8');
+                console.log('✅ Code Samurai agent initialized at .github/agents/code-samurai.agent.md');
+            } else {
+                console.warn('Code Samurai template not found in extension');
+            }
+        } else {
+            console.log('Code Samurai agent already exists, skipping');
+        }
+
+        // 3. Ensure .vscode/settings.json has the required Copilot setting
+        const vscodeDirPath = path.join(workspacePath, '.vscode');
+        const settingsPath = path.join(vscodeDirPath, 'settings.json');
+        
+        if (!fs.existsSync(vscodeDirPath)) {
+            fs.mkdirSync(vscodeDirPath, { recursive: true });
+        }
+
+        let settings: any = {};
+        if (fs.existsSync(settingsPath)) {
+            try {
+                const settingsContent = fs.readFileSync(settingsPath, 'utf8');
+                settings = JSON.parse(settingsContent);
+            } catch (error) {
+                console.error('Error reading settings.json:', error);
+            }
+        }
+
+        // Add the required setting if not present
+        if (!settings['github.copilot.chat.useProjectTemplates']) {
+            settings['github.copilot.chat.useProjectTemplates'] = true;
+            fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 4), 'utf8');
+            console.log('✅ Added Copilot project templates setting to workspace');
+        }
+
+    } catch (error) {
+        console.error('Error initializing Code Samurai agent:', error);
+        // Don't show error to user - silent initialization
+    }
 }
 
 async function checkCopilotAvailability() {

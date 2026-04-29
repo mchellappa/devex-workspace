@@ -1,8 +1,8 @@
 {
   "name": "devex-ai-assistant",
-  "displayName": "DevEx AI Assistant",
-  "description": "Complete SDLC acceleration platform: LLD review, OpenAPI generation, Spring Boot code generation, deployment automation, and productivity analytics. AI-powered by GitHub Copilot.",
-  "version": "1.2.6",
+  "displayName": "Spec2PR",
+  "description": "Complete SDLC acceleration platform with Code Samurai AI agent: LLD review, OpenAPI generation, Spring Boot code generation, AI-enhanced RCA, deployment automation, and productivity analytics. Auto-initializing workflow guide powered by GitHub Copilot.",
+  "version": "1.11.0",
   "publisher": "CodeSamurai",
   "icon": "images/icon.png",
   "private": true,
@@ -12,7 +12,36 @@
     "url": "https://github.com/mchellappa/devex-workspace.git"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.95.0"
+  },
+  "capabilities": {
+    "languageModelTools": {
+      "provides": [
+        "devex_analyzeERD",
+        "devex_generateDomainDrivenAPIs",
+        "devex_generateOpenAPISpec",
+        "devex_generateSpringBootProject",
+        "devex_generateUnitTests",
+        "devex_reviewCode",
+        "devex_insertDeploymentTemplate",
+        "devex_analyzeJiraTicket",
+        "devex_generateLLDFromRequirements",
+        "devex_reviewLLD",
+        "devex_parseOpenAPI",
+        "devex_summarizeLLD",
+        "devex_validateLLDAgainstJira",
+        "devex_fetchMyJiraTickets",
+        "devex_addJiraComment",
+        "devex_generateKDD",
+        "devex_generateRCA",
+        "devex_createJiraStoryFromLLD",
+        "devex_implementJiraStory",
+        "devex_completeJiraStory",
+        "devex_addEndpoint",
+        "devex_generateCALMArchitecture",
+        "devex_validateGeneratedCode"
+      ]
+    }
   },
   "categories": [
     "Programming Languages",
@@ -41,6 +70,28 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "chatParticipants": [
+      {
+        "id": "askcodesamurai",
+        "name": "askcodesamurai",
+        "description": "Engineering Guardrails + AI-assisted development for distributed teams.",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "fetch",
+            "description": "Fetch your assigned Jira tickets"
+          },
+          {
+            "name": "analyze",
+            "description": "Analyze a Jira ticket and generate TODO list"
+          },
+          {
+            "name": "comment",
+            "description": "Add selected text as a Jira comment"
+          }
+        ]
+      }
+    ],
     "commands": [
       {
         "command": "devex.generateSpringBootProject",
@@ -91,10 +142,145 @@
         "command": "devex.reviewCode",
         "title": "Review Code",
         "category": "DevEx"
+      },
+      {
+        "command": "devex.validateLLDAgainstJira",
+        "title": "Validate LLD Against Jira Story",
+        "category": "DevEx"
+      },
+      {
+        "command": "devex.generateLLDFromRequirements",
+        "title": "Generate LLD from Requirements Document",
+        "category": "DevEx"
+      },
+      {
+        "command": "devex.fetchMyJiraTickets",
+        "title": "Fetch My Jira Tickets",
+        "category": "DevEx",
+        "icon": "$(issues)"
+      },
+      {
+        "command": "devex.analyzeJiraTicket",
+        "title": "Analyze Jira Ticket (Summarize & TODO)",
+        "category": "DevEx",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "devex.addJiraComment",
+        "title": "Add Selected Text as Jira Comment",
+        "category": "DevEx",
+        "icon": "$(comment)"
+      },
+      {
+        "command": "devex.generateKDD",
+        "title": "Generate Key Design Document (KDD)",
+        "category": "DevEx",
+        "icon": "$(file-text)"
+      },
+      {
+        "command": "devex.generateRCA",
+        "title": "Generate Root Cause Analysis (RCA)",
+        "category": "DevEx",
+        "icon": "$(search)"
+      },
+      {
+        "command": "devex.generateCALMArchitecture",
+        "title": "Generate CALM Architecture from Jira Story",
+        "category": "DevEx",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "devex.createJiraStoryFromLLD",
+        "title": "Create Jira Story from LLD",
+        "category": "DevEx",
+        "icon": "$(issues)"
+      },
+      {
+        "command": "devex.implementJiraStory",
+        "title": "Implement Jira Story/Task",
+        "category": "DevEx",
+        "icon": "$(code)"
+      },
+      {
+        "command": "devex.completeJiraStory",
+        "title": "Complete Jira Story",
+        "category": "DevEx",
+        "icon": "$(check)"
+      },
+      {
+        "command": "devex.resumeJiraStoryCompletion",
+        "title": "Resume Jira Story Completion",
+        "category": "DevEx",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "devex.convertMarkdown",
+        "title": "Convert Markdown to DOCX/PDF",
+        "category": "DevEx",
+        "icon": "$(file-pdf)"
+      },
+      {
+        "command": "devex.analyzeERD",
+        "title": "Analyze ERD Diagram",
+        "category": "DevEx",
+        "icon": "$(database)"
+      },
+      {
+        "command": "devex.generateDomainDrivenAPIs",
+        "title": "GenerateDomainDrivenAPIs",
+        "category": "DevEx",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "devex.generateUnitTests",
+        "title": "Generate Unit Tests (80%+ Coverage)",
+        "category": "DevEx",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "devex.generateTestsForProject",
+        "title": "Generate Unit Tests for Entire Project",
+        "category": "DevEx",
+        "icon": "$(file-submodule)"
+      },
+      {
+        "command": "devex.validateGeneratedCode",
+        "title": "Validate Generated Spring Boot Code",
+        "category": "DevEx",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "devex.verifyToolRegistration",
+        "title": "Verify Language Model Tool Registration",
+        "category": "DevEx",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "devex.generateAgent",
+        "title": "Deploy Engineering Agent to Copilot",
+        "category": "DevEx",
+        "icon": "$(person-add)"
+      },
+      {
+        "command": "devex.generateSkill",
+        "title": "Deploy Engineering Skill to Copilot",
+        "category": "DevEx",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "devex.manageDeployedAgents",
+        "title": "Manage Deployed Agents & Skills",
+        "category": "DevEx",
+        "icon": "$(extensions)"
       }
     ],
     "menus": {
       "editor/context": [
+        {
+          "when": "resourceExtname == .md",
+          "command": "devex.convertMarkdown",
+          "group": "1_modification@1"
+        },
         {
           "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
           "command": "devex.summarizeLLD",
@@ -111,9 +297,29 @@
           "group": "devex@3"
         },
         {
+          "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
+          "command": "devex.validateLLDAgainstJira",
+          "group": "devex@4"
+        },
+        {
+          "when": "resourceExtname == .pdf || resourceExtname == .txt || resourceExtname == .md",
+          "command": "devex.generateLLDFromRequirements",
+          "group": "devex@5"
+        },
+        {
+          "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
+          "command": "devex.createJiraStoryFromLLD",
+          "group": "devex@6"
+        },
+        {
           "when": "resourceExtname == .yaml || resourceExtname == .yml || resourceExtname == .json",
           "command": "devex.parseOpenAPI",
-          "group": "devex@4"
+          "group": "devex@7"
+        },
+        {
+          "when": "resourceExtname == .java || resourceExtname == .cs",
+          "command": "devex.generateUnitTests",
+          "group": "devex@8"
         }
       ],
       "explorer/context": [
@@ -143,9 +349,29 @@
           "group": "devex@4"
         },
         {
+          "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
+          "command": "devex.validateLLDAgainstJira",
+          "group": "devex@5"
+        },
+        {
+          "when": "resourceExtname == .pdf || resourceExtname == .txt || resourceExtname == .md",
+          "command": "devex.generateLLDFromRequirements",
+          "group": "devex@6"
+        },
+        {
+          "when": "resourceExtname == .md || resourceExtname == .txt || resourceExtname == .docx",
+          "command": "devex.createJiraStoryFromLLD",
+          "group": "devex@7"
+        },
+        {
           "when": "resourceExtname == .yaml || resourceExtname == .yml || resourceExtname == .json",
           "command": "devex.parseOpenAPI",
-          "group": "devex@5"
+          "group": "devex@8"
+        },
+        {
+          "when": "resourceExtname == .png || resourceExtname == .jpg || resourceExtname == .jpeg",
+          "command": "devex.analyzeERD",
+          "group": "devex@9"
         }
       ]
     },
@@ -194,6 +420,132 @@
           "type": "string",
           "default": "",
           "description": "URL to check for extension updates (GitHub releases API)"
+        },
+        "devex.jira.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Your Jira instance base URL (e.g., https://yourcompany.atlassian.net)"
+        },
+        "devex.jira.email": {
+          "type": "string",
+          "default": "",
+          "description": "Your Jira account email address"
+        },
+        "devex.jira.apiToken": {
+          "type": "string",
+          "default": "",
+          "description": "Your Jira API token (create at https://id.atlassian.com/manage/api-tokens)"
+        },
+        "devex.lld.outputFormat": {
+          "type": "string",
+          "enum": [
+            "docx",
+            "markdown",
+            "html"
+          ],
+          "default": "docx",
+          "description": "Default output format for generated LLD documents"
+        },
+        "devex.lld.includeCoverPage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include cover page in generated DOCX documents"
+        },
+        "devex.lld.includeTableOfContents": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include auto-generated table of contents in DOCX documents"
+        },
+        "devex.lld.enableTrackChanges": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable track changes by default in generated DOCX documents"
+        },
+        "devex.lld.corporateTemplate": {
+          "type": "string",
+          "default": "",
+          "description": "Path to corporate DOCX template for LLD generation (optional)"
+        },
+        "devex.lld.embedDiagrams": {
+          "type": "boolean",
+          "default": true,
+          "description": "Embed generated diagrams directly in LLD documents"
+        },
+        "devex.lld.diagramFormat": {
+          "type": "string",
+          "enum": [
+            "png",
+            "svg"
+          ],
+          "default": "png",
+          "description": "Format for embedded diagrams in LLD documents"
+        },
+        "devex.infrastructure.hostingPlatform": {
+          "type": "string",
+          "enum": [
+            "AKS (Azure Kubernetes Service)",
+            "Azure App Service",
+            "Azure Container Instances",
+            "On-premises Kubernetes",
+            "Other"
+          ],
+          "default": "AKS (Azure Kubernetes Service)",
+          "description": "Default hosting platform for generated LLDs"
+        },
+        "devex.infrastructure.apiGateway": {
+          "type": "string",
+          "enum": [
+            "Azure APIM (API Management)",
+            "Direct exposure",
+            "Azure Application Gateway",
+            "Kong",
+            "Other"
+          ],
+          "default": "Azure APIM (API Management)",
+          "description": "Default API gateway for generated LLDs"
+        },
+        "devex.infrastructure.database": {
+          "type": "string",
+          "enum": [
+            "Azure SQL Managed Instance",
+            "Azure SQL Database",
+            "PostgreSQL",
+            "MongoDB",
+            "Cosmos DB",
+            "Other"
+          ],
+          "default": "Azure SQL Managed Instance",
+          "description": "Default database for generated LLDs"
+        },
+        "devex.infrastructure.monitoring": {
+          "type": "string",
+          "enum": [
+            "Azure Application Insights",
+            "Azure Monitor",
+            "Prometheus + Grafana",
+            "ELK Stack",
+            "Other"
+          ],
+          "default": "Azure Application Insights",
+          "description": "Default monitoring solution for generated LLDs"
+        },
+        "devex.email.defaultRecipients": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Default email recipients for sharing documents (e.g., architect@company.com). Leave empty to manually add recipients each time."
+        },
+        "devex.email.includeMetrics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include productivity metrics and extension signature in email body"
+        },
+        "devex.email.attachmentReminder": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show reminder to attach files when sharing via email"
         }
       }
     }
@@ -205,12 +557,17 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "package": "vsce package"
+    "package": "vsce package",
+    "validate-templates": "node scripts/validate-templates.js",
+    "validate-tools": "node scripts/validate-tool-registration.js",
+    "pre-package": "node scripts/pre-package-validation.js",
+    "maven-test": "node scripts/maven-compile-test.js",
+    "maven-test-openapi": "node scripts/maven-test-with-openapi.js"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.x",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.95.0",
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
     "@vscode/test-electron": "^2.3.8",
@@ -219,6 +576,8 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "docx": "^8.5.0",
+    "form-data": "^4.0.5",
     "handlebars": "^4.7.8",
     "js-yaml": "^4.1.0",
     "mammoth": "^1.11.0",

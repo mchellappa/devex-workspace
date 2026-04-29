@@ -4,7 +4,7 @@
 
 ## Overview
 
-The DevEx AI Assistant is a comprehensive VS Code extension that leverages GitHub Copilot to accelerate your entire software development lifecycle - from design validation to code generation to deployment automation. Built for engineering teams to maintain velocity while ensuring principal engineer-level quality standards throughout the SDLC.
+The Spec2PR is a comprehensive VS Code extension that leverages GitHub Copilot to accelerate your entire software development lifecycle - from design validation to code generation to deployment automation. Built for engineering teams to maintain velocity while ensuring principal engineer-level quality standards throughout the SDLC.
 
 **What started as a Spring Boot generator has evolved into a complete development workflow assistant** that covers:
 - 📋 Design review and validation
@@ -18,9 +18,33 @@ The DevEx AI Assistant is a comprehensive VS Code extension that leverages GitHu
 ### Core Capabilities
 
 #### Design & Planning Phase
+- **Generate LLD from Requirements** ⭐ NEW: Convert requirements documents (PDF/TXT/MD) into comprehensive LLDs
+  - **Interactive conversational workflow** with clarifying questions
+  - **DOCX output** with professional formatting, diagrams, and track changes
+  - **Software engineering best practices** built-in (SOLID, security, testing, monitoring)
+  - Saves 8-12 hours on initial LLD creation
+- **Generate KDD (Key Design Document)** 🆕 AI-powered architectural decision documentation
+  - **Conversational workflow**: Gather context, generate options, evaluate, and document
+  - **AI-generated design options**: 3 distinct approaches with pros/cons analysis
+  - **Decision matrix**: Score options on performance, scalability, cost, complexity, time-to-market
+  - **AI recommendations**: Get expert guidance on which option to choose
+  - **Professional output**: GWAM-compliant KDD template with complete documentation
+  - Saves 6-10 hours on design decision documentation
+- **Analyze Jira Ticket** 🆕 v1.4.0: Smart story analysis with multi-repo detection
+  - **Single-Repo Stories**: Generates comprehensive TODO lists with acceptance criteria
+  - **Multi-Repo Stories**: Detects affected services and creates coordination plans
+  - **Interactive Repository Mapping**: Asks user for repo URLs, stores in `.devex` folder
+  - **Learning System**: Suggests from history, gets smarter with each use
+  - **Implementation Phases**: AI determines parallel vs sequential work
+  - **Dependency Analysis**: Identifies service dependencies and order
+  - **Subtask Suggestions**: Proposes Jira subtask breakdown
+  - **Team Knowledge Sharing**: `.devex` folder committed to git
+  - Saves 90+ minutes per multi-repo story planning
 - **LLD Review & Validation**: AI-powered architectural review with **two specialized reviews**:
   - **Software Engineering Completeness**: Comprehensive review (error handling, state management, security, performance, monitoring, operations)
   - **API Design Completeness**: Ensure LLDs have all details for OpenAPI/code generation
+  - **Code Generation Readiness**: Check if LLD contains enough detail for production-ready code
+- **Jira Integration**: Validate LLD coverage against Jira story requirements
 - **Design Documentation**: Summarize and analyze LLD documents (.md, .txt, .docx)
 - **Best Practices Guidance**: Learn engineering standards through AI feedback
 
@@ -56,12 +80,30 @@ Access all commands via Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) or cont
 - **Summarize LLD** - AI-powered analysis and summary of design documents
 - **Review LLD** - Comprehensive architectural review (includes API completeness check)
 - **Generate OpenAPI Spec from LLD** - Create complete OpenAPI 3.0 specifications
+- **Generate Key Design Document (KDD)** 🆕 - AI-driven architectural decision documentation
+- **Analyze Jira Ticket** 🆕 v1.4.0 - Smart story analysis with multi-repo planning
+  - Single repo → TODO list with acceptance criteria
+  - Multi repo → Coordination plan with phases and dependencies
+  - Interactive repo mapping with `.devex` knowledge storage
+  - Learns from history, suggests repos next time
 
 ####  Development & Code Generation
 - **Generate Spring Boot Project** - Complete enterprise-grade microservices
 - **Parse OpenAPI Spec** - Validate and analyze API specifications
 - **Review Code** - AI-powered code quality and architecture review
 - **Add REST Endpoint** - Quick endpoint scaffolding (coming soon)
+
+####  Testing & Quality Assurance 🆕
+- **Generate Unit Tests (80%+ Coverage)** - AI-powered test generation for Java and .NET
+  - Analyze code structure (methods, complexity, edge cases)
+  - Generate JUnit 5 + Mockito (Java) or xUnit + Moq (.NET) tests
+  - Interactive single-file or batch project-wide generation
+  - Coverage estimation and quality metrics
+- **Auto-Generate Tests During Story Creation** ⭐ - Tests created before marking stories complete
+  - Integrated with "Generate Domain-Driven APIs" workflow
+  - Automatic test generation after Spring Boot code
+  - Coverage metrics in Jira comments
+  - Enforces Definition of Done with tests
 
 ####  Deployment & Infrastructure
 - **Insert Deployment Template** - Add Kubernetes/Docker/CI-CD configurations
@@ -654,19 +696,11 @@ A: Yes! This is an internal project. Contact the DevEx team or open issues on in
 
 ## Support
 
-### Internal Resources
-
-- **Slack**: #devex-ai-assistant
-- **Email**: devex-team@yourcompany.com
-- **GitHub**: https://github.com/yourorg/devex-ai-assistant (issues, discussions)
-- **Wiki**: Internal confluence/wiki page
-
 ### Getting Help
 
 1. Check this README and FAQ
 2. Search existing GitHub issues
-3. Post in Slack channel
-4. Contact DevEx team directly
+3. Post an issue in the GitHub
 
 ## Roadmap
 
