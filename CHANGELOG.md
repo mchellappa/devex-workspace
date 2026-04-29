@@ -5,6 +5,159 @@ All notable changes to the DevEx AI Assistant extension will be documented in th
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-04-28
+
+### 🤖 New Feature: Engineering Agent & Skill Generator
+
+Deploy role-based Copilot agents and skills to your user-level `~/.copilot/` home with one command — available instantly across all your projects in Copilot CLI.
+
+#### New Commands
+
+- **Deploy Engineering Agent to Copilot** (`devex.generateAgent`) — Pick from a catalog of 5 role-based agent templates and deploy to `~/.copilot/agents/`. Use with `/agent` in Copilot CLI.
+- **Deploy Engineering Skill to Copilot** (`devex.generateSkill`) — Pick from a catalog of 6 skill templates and deploy to `~/.copilot/skills/`. Use with `/skills list` in Copilot CLI.
+- **Manage Deployed Agents & Skills** (`devex.manageDeployedAgents`) — List and remove deployed agents and skills.
+
+#### Agent Catalog (5 roles)
+
+| Agent | Expertise |
+|---|---|
+| Spring Boot Engineer | Java/Spring Boot 3.x, DDD, JPA, REST APIs, JUnit 5 + Mockito |
+| DevOps Engineer | Kubernetes, AKS, Helm, GitHub Actions, Docker security |
+| API Designer | OpenAPI 3.0, contract-first design, REST conventions, versioning |
+| Security Reviewer | OWASP Top 10, JWT/OAuth2, secrets management, Spring Security |
+| Data Engineer | SQL/NoSQL schema design, JPA/Hibernate, Flyway, query optimization |
+
+#### Skill Catalog (6 capabilities)
+
+| Skill | What it adds |
+|---|---|
+| spring-boot-testing | MockMvc, @WebMvcTest, @DataJpaTest, test naming conventions |
+| openapi-validation | Completeness checklist + code-gen readiness validation |
+| kubernetes-deployment | K8s manifest standards, HPA, AKS Workload Identity |
+| github-actions-debugging | Step-by-step CI/CD failure classification and fixes |
+| java-code-review | Null safety, exception handling, streams, Spring anti-patterns |
+| jira-workflow | Story analysis, TODO templates, PR comment formats |
+
+#### How It Works
+
+Agents and skills deploy to `~/.copilot/agents/` and `~/.copilot/skills/` respectively, making them available to the Copilot CLI `/agent` and `/skills` commands across **all projects**. Respects `COPILOT_HOME` environment variable override.
+
+---
+
+## [1.10.0] - 2026-04-16
+
+### 🚀 Major Feature: Language Model Tools Integration
+
+**DevEx commands now accessible to AI assistants via VS Code Language Model Tools API**
+
+#### What's New
+
+**Language Model Tools API Integration**:
+- 🤖 All 23 DevEx commands exposed as Language Model Tools
+- 🔧 Enables GitHub Copilot and other AI assistants to invoke DevEx commands directly
+- 🎯 Code Samurai agent now has full access to DevEx platform capabilities
+- 📊 Structured tool invocation with comprehensive error handling and logging
+
+**Available Tools** (23 total):
+- **Phase 1 - Requirements & Planning**: `devex_analyzeJiraTicket`, `devex_fetchMyJiraTickets`, `devex_validateLLDAgainstJira`, `devex_addJiraComment`
+- **Phase 2 - Design & Architecture**: `devex_analyzeERD`, `devex_generateLLDFromRequirements`, `devex_reviewLLD`, `devex_summarizeLLD`, `devex_generateKDD`, `devex_generateRCA`, `devex_generateCALMArchitecture`
+- **Phase 3 - API Design**: `devex_generateDomainDrivenAPIs`, `devex_generateOpenAPISpec`, `devex_parseOpenAPI`
+- **Phase 4 - Code Generation**: `devex_generateSpringBootProject`, `devex_implementJiraStory`, `devex_createJiraStoryFromLLD`, `devex_completeJiraStory`, `devex_addEndpoint`, `devex_generateUnitTests`
+- **Phase 5 - Quality & Review**: `devex_reviewCode`, `devex_validateGeneratedCode`
+- **Phase 6 - Deployment**: `devex_insertDeploymentTemplate`
+
+**Technical Implementation**:
+- Added `capabilities.languageModelTools` to `package.json`
+- Created `src/tools/devexToolsRegistration.ts` with comprehensive tool registration
+- Updated `src/extension.ts` to register tools on activation
+- Enhanced Code Samurai agent configuration with all DevEx tools
+- Implemented tool logger for debugging and monitoring
+
+**Benefits**:
+- 🎯 **Seamless AI Integration**: AI assistants can now orchestrate complex SDLC workflows
+- 🚀 **Enhanced Automation**: End-to-end workflows from Jira ticket to deployment
+- 📈 **Improved Developer Experience**: Natural language commands execute DevEx operations
+- 🔍 **Better Discoverability**: Tools automatically available to all compatible AI assistants
+- 🛡️ **Robust Error Handling**: Structured responses with success/failure states
+
+**Usage Examples**:
+```
+@code-samurai Analyze ERD file Datamodel.csv and generate domain-driven APIs
+@code-samurai Review my LLD and generate OpenAPI specification
+@code-samurai Implement Jira story SWIFT-12345 with full test coverage
+```
+
+**Documentation**:
+- Complete integration guide: `DEVEX_TOOL_INTEGRATION_GUIDE.md`
+- Tool registration patterns and best practices
+- Testing and debugging guidelines
+- Security considerations and input validation
+
+**Files Added/Modified**:
+- `src/tools/devexToolsRegistration.ts` (new) - Tool registration module
+- `package.json` - Added Language Model Tools capabilities
+- `src/extension.ts` - Integrated tool registration
+- `.github/agents/code-samurai.agent.md` - Updated with DevEx tools
+- `DEVEX_TOOL_INTEGRATION_GUIDE.md` - Comprehensive integration documentation
+
+---
+
+## [1.9.1] - 2026-04-14
+
+### 🤖 Major Feature: SDLC Orchestrator Agent
+
+**Added intelligent AI agent for end-to-end SDLC workflow orchestration**
+
+#### What's New
+
+**SDLC Orchestrator Agent** (`@SDLC Orchestrator`):
+- 🎯 Intelligent workflow coordinator for complete software delivery lifecycle
+- 📋 Orchestrates 7 phases: Requirements → Design → API → Code → Quality → Deploy → Complete
+- 🔄 Supports 4 workflow patterns:
+  - Complete Feature Development (Jira → Production)
+  - Multi-Repo Story Coordination
+  - Design-First Approach
+  - Quick Implementation (OpenAPI → Code)
+- ✅ Enforces quality gates at each phase
+- 📊 Interactive progress tracking with todo management
+- 🧠 Context-aware recommendations based on current state
+- 🎓 Educational guidance explaining WHY each step matters
+- 🚀 **93% time reduction**: 12-23 hours → 1-1.5 hours per story
+
+**Integration**:
+- Coordinates all 25+ DevEx commands intelligently
+- Detects multi-repo dependencies automatically
+- Maintains context across workflow phases
+- Validates artifacts before proceeding
+- Creates comprehensive execution plans
+
+**Documentation**:
+- Comprehensive engineer guide: `docs/SDLC_ORCHESTRATOR_GUIDE.md`
+- Deployment guide with rollout strategy: `docs/SDLC_ORCHESTRATOR_DEPLOYMENT.md`
+- Example workflows and troubleshooting
+- Quick reference card with essential prompts
+
+**Usage**:
+```
+@SDLC Orchestrator Implement story SWIFT-12345
+@SDLC Orchestrator Guide me through implementing a REST API feature
+@SDLC Orchestrator I have an LLD, what's next?
+```
+
+**Benefits**:
+- ⚡ Reduces workflow coordination overhead by ~93%
+- 🎯 Ensures consistent quality across all deliverables
+- 📚 Accelerates new engineer onboarding
+- 🔒 Enforces best practices and security reviews
+- 📈 Improves team velocity and productivity
+
+**Files Added**:
+- `.github/agents/sdlc-orchestrator.agent.md` - Agent definition
+- `docs/SDLC_ORCHESTRATOR_GUIDE.md` - Engineer documentation (1000+ lines)
+- `docs/SDLC_ORCHESTRATOR_DEPLOYMENT.md` - Team deployment guide
+
+---
+
 ## [1.8.24] - 2026-02-18
 
 ### ✨ Enhancement: KDD Template Visual Overhaul

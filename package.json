@@ -1,8 +1,8 @@
 {
   "name": "devex-ai-assistant",
   "displayName": "Spec2PR",
-  "description": "Complete SDLC acceleration platform: LLD review, OpenAPI generation, Spring Boot code generation, deployment automation, and productivity analytics. AI-powered by GitHub Copilot.",
-  "version": "1.8.24",
+  "description": "Complete SDLC acceleration platform with Code Samurai AI agent: LLD review, OpenAPI generation, Spring Boot code generation, AI-enhanced RCA, deployment automation, and productivity analytics. Auto-initializing workflow guide powered by GitHub Copilot.",
+  "version": "1.11.0",
   "publisher": "CodeSamurai",
   "icon": "images/icon.png",
   "private": true,
@@ -12,7 +12,36 @@
     "url": "https://github.com/mchellappa/devex-workspace.git"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.95.0"
+  },
+  "capabilities": {
+    "languageModelTools": {
+      "provides": [
+        "devex_analyzeERD",
+        "devex_generateDomainDrivenAPIs",
+        "devex_generateOpenAPISpec",
+        "devex_generateSpringBootProject",
+        "devex_generateUnitTests",
+        "devex_reviewCode",
+        "devex_insertDeploymentTemplate",
+        "devex_analyzeJiraTicket",
+        "devex_generateLLDFromRequirements",
+        "devex_reviewLLD",
+        "devex_parseOpenAPI",
+        "devex_summarizeLLD",
+        "devex_validateLLDAgainstJira",
+        "devex_fetchMyJiraTickets",
+        "devex_addJiraComment",
+        "devex_generateKDD",
+        "devex_generateRCA",
+        "devex_createJiraStoryFromLLD",
+        "devex_implementJiraStory",
+        "devex_completeJiraStory",
+        "devex_addEndpoint",
+        "devex_generateCALMArchitecture",
+        "devex_validateGeneratedCode"
+      ]
+    }
   },
   "categories": [
     "Programming Languages",
@@ -149,6 +178,18 @@
         "icon": "$(file-text)"
       },
       {
+        "command": "devex.generateRCA",
+        "title": "Generate Root Cause Analysis (RCA)",
+        "category": "DevEx",
+        "icon": "$(search)"
+      },
+      {
+        "command": "devex.generateCALMArchitecture",
+        "title": "Generate CALM Architecture from Jira Story",
+        "category": "DevEx",
+        "icon": "$(graph)"
+      },
+      {
         "command": "devex.createJiraStoryFromLLD",
         "title": "Create Jira Story from LLD",
         "category": "DevEx",
@@ -207,6 +248,30 @@
         "title": "Validate Generated Spring Boot Code",
         "category": "DevEx",
         "icon": "$(check-all)"
+      },
+      {
+        "command": "devex.verifyToolRegistration",
+        "title": "Verify Language Model Tool Registration",
+        "category": "DevEx",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "devex.generateAgent",
+        "title": "Deploy Engineering Agent to Copilot",
+        "category": "DevEx",
+        "icon": "$(person-add)"
+      },
+      {
+        "command": "devex.generateSkill",
+        "title": "Deploy Engineering Skill to Copilot",
+        "category": "DevEx",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "devex.manageDeployedAgents",
+        "title": "Manage Deployed Agents & Skills",
+        "category": "DevEx",
+        "icon": "$(extensions)"
       }
     ],
     "menus": {
@@ -494,6 +559,7 @@
     "test": "node ./out/test/runTest.js",
     "package": "vsce package",
     "validate-templates": "node scripts/validate-templates.js",
+    "validate-tools": "node scripts/validate-tool-registration.js",
     "pre-package": "node scripts/pre-package-validation.js",
     "maven-test": "node scripts/maven-compile-test.js",
     "maven-test-openapi": "node scripts/maven-test-with-openapi.js"
@@ -501,7 +567,7 @@
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.x",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.95.0",
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
     "@vscode/test-electron": "^2.3.8",
