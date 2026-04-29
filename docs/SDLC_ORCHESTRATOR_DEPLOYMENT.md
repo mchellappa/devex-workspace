@@ -1,36 +1,46 @@
-# SDLC Orchestrator - Deployment Guide
+# Code Samurai Agent - Deployment Guide
 
-This guide walks you through deploying the SDLC Orchestrator agent to your engineering team.
+This guide walks you through deploying the Code Samurai agent to your engineering team.
+
+---
+
+## 🎯 Overview
+
+**Code Samurai** is an intelligent SDLC guide that auto-initializes in every workspace where the DevEx AI Assistant extension is installed. Your engineers get instant workflow guidance without any manual setup.
+
+### How It Works
+
+1. **Engineer installs** DevEx AI Assistant extension (.vsix)
+2. **Opens any workspace** in VS Code
+3. **Extension auto-creates** `.github/agents/code-samurai.agent.md` (if not exists)
+4. **Code Samurai appears** immediately in GitHub Copilot Chat
+5. **Engineer starts using** workflow guidance right away ✅
+
+The agent file is auto-generated, but engineers can commit it to Git if they want version control.
 
 ---
 
 ## Prerequisites
 
-Before rolling out the SDLC Orchestrator, ensure your team has:
+Before rolling out Code Samurai, ensure your team has:
 
-✅ **VS Code** (version 1.85.0+)  
-✅ **GitHub Copilot** extension installed and licensed  
-✅ **DevEx AI Assistant** extension installed (your custom extension)  
-✅ **Git** configured and repository access  
+✅ **VS Code** (version 1.90.0+) - Required for custom agents  
+✅ **GitHub Copilot Chat** extension (v0.43.0+) - Required for agent support  
+✅ **DevEx AI Assistant** extension (your custom extension)  
+✅ **Git** configured and repository access (optional)  
 ✅ **Jira** configured (if using Jira integration features)
 
 ---
 
 ## Deployment Steps
 
-### Step 1: Push the Agent to Your Repository ✅ DONE
+### Step 1: Verify Template Exists ✅ DONE
 
-The agent file is already committed to your repository:
-- **Agent**: `.github/agents/sdlc-orchestrator.agent.md`
+The Code Samurai template is located at:
+- **Template**: `templates/agents/code-samurai.agent.md`
 - **Documentation**: `docs/SDLC_ORCHESTRATOR_GUIDE.md`
 
-**Next**: Push to remote repository:
-
-```bash
-git push origin feature/add-jira-support
-```
-
-Then create a PR and merge to your main branch.
+This template is bundled in the extension and auto-deployed on activation.
 
 ---
 
@@ -38,7 +48,7 @@ Then create a PR and merge to your main branch.
 
 **File**: `package.json`
 
-Update version and changelog to announce the new agent:
+Update version to announce the new agent:
 
 ```json
 {
@@ -55,17 +65,22 @@ Add release notes:
 ## [1.9.0] - 2026-04-14
 
 ### Added
-- **SDLC Orchestrator Agent** - Intelligent workflow coordinator for end-to-end SDLC
-  - Guides engineers through 7 phases: Requirements → Design → API → Code → Quality → Deploy → Complete
-  - Supports 4 workflow patterns: Complete Feature, Multi-Repo, Design-First, Quick Implementation
-  - Enforces quality gates at each phase
-  - Reduces coordination overhead by ~93% (12-23 hours → 1-1.5 hours)
-  - Integrates all 25+ DevEx commands into guided workflows
-  - Comprehensive documentation: `docs/SDLC_ORCHESTRATOR_GUIDE.md`
+- **Code Samurai Agent** - Auto-initializing SDLC workflow guide
+  - ⚡ Zero-config setup - auto-creates agent file on extension activation
+  - 🎯 Guides engineers through 7 SDLC phases: Requirements → Design → API → Code → Quality → Deploy → Complete
+  - 📋 Supports 4 workflow patterns: Complete Feature, Multi-Repo, Design-First, Quick Implementation
+  - ✅ Enforces quality gates at each phase
+  - 📊 Reduces coordination overhead by ~93% (12-23 hours → 1-1.5 hours)
+  - 🔧 Integrates all 25+ DevEx commands into guided workflows
+  - 🤖 AI-enhanced Root Cause Analysis with executive insights
+  - 📖 Comprehensive documentation: `docs/SDLC_ORCHESTRATOR_GUIDE.md`
 
-### Usage
-Invoke with: `@SDLC Orchestrator <your request>`
-Example: `@SDLC Orchestrator Implement story SWIFT-12345`
+### How to Use
+1. Install DevEx AI Assistant extension
+2. Open any workspace
+3. Open GitHub Copilot Chat panel
+4. Select "Code Samurai" from mode dropdown (or type `@Code Samurai`)
+5. Start your workflow: `implement payment API feature`
 ```
 
 ---
@@ -97,7 +112,7 @@ If you have an internal VS Code marketplace:
 npx vsce publish -p <your-personal-access-token>
 ```
 
-Engineers auto-update via VS Code.
+Engineers auto-update via VS Code. Code Samurai agent auto-initializes on first workspace  open.
 
 #### Option B: Manual Distribution
 
@@ -113,6 +128,7 @@ Engineers auto-update via VS Code.
    3. Click "..." → "Install from VSIX..."
    4. Select downloaded file
    5. Restart VS Code
+   6. Open any workspace → Code Samurai auto-initializes ✅
    ```
 
 #### Option C: GitHub Release (Your Current Setup)
@@ -120,8 +136,8 @@ Engineers auto-update via VS Code.
 ```bash
 # Create GitHub release
 gh release create v1.9.0 \
-  --title "DevEx AI Assistant v1.9.0 - SDLC Orchestrator" \
-  --notes "Adds intelligent SDLC workflow orchestration" \
+  --title "DevEx AI Assistant v1.9.0 - Code Samurai Agent" \
+  --notes "Auto-initializing SDLC workflow guide with AI-enhanced RCA" \
   devex-ai-assistant-1.9.0.vsix
 ```
 
@@ -136,16 +152,24 @@ Add to your team wiki/confluence:
 #### Quick Start Section
 
 ```markdown
-## Using the SDLC Orchestrator
+## Using Code Samurai
 
-The SDLC Orchestrator guides you through complete feature development workflows.
+Code Samurai is your intelligent SDLC guide - auto-initialized in every workspace.
 
 **Quick Start**:
-1. Open VS Code with GitHub Copilot Chat
-2. Type: `@SDLC Orchestrator Implement story SWIFT-12345`
-3. Follow the guided workflow
+1. Install DevEx AI Assistant extension
+2. Open any workspace in VS Code
+3. Open GitHub Copilot Chat panel
+4. Select "Code Samurai" from mode dropdown
+5. Start: `implement payment API feature`
 
-**Full Guide**: [SDLC Orchestrator Documentation](link-to-docs)
+**What happens behind the scenes**:
+- Extension creates `.github/agents/code-samurai.agent.md` automatically
+- Adds required Copilot setting to `.vscode/settings.json`
+- Agent appears instantly in Copilot Chat
+- No manual configuration needed! ⚡
+
+**Full Guide**: [Code Samurai Documentation](docs/SDLC_ORCHESTRATOR_GUIDE.md)
 ```
 
 #### Update README
@@ -155,33 +179,37 @@ Add to your main README.md:
 ```markdown
 ## 🤖 AI Agents
 
-### SDLC Orchestrator
-Intelligent workflow coordinator for end-to-end software delivery.
+### Code Samurai ⚔️
+Auto-initializing SDLC workflow guide for end-to-end software delivery.
 
 **What it does**:
-- Analyzes Jira stories and plans implementation
-- Guides through 7 SDLC phases with quality gates
-- Coordinates multi-repo stories automatically
-- Reduces workflow planning from 12-23 hours to 1-1.5 hours
+- ⚡ Zero-config setup - works instantly after extension install
+- 🎯 Analyzes Jira stories and plans implementation
+- 📋 Guides through 7 SDLC phases with quality gates
+- 🔄 Coordinates multi-repo stories automatically
+- 📊 Reduces workflow planning from 12-23 hours to 1-1.5 hours
 
 **How to use**:
 ```
-@SDLC Orchestrator Implement story SWIFT-12345
+Select "Code Samurai" in Copilot Chat, then:
+implement story SWIFT-12345
 ```
 
-**Learn more**: [SDLC Orchestrator Guide](docs/SDLC_ORCHESTRATOR_GUIDE.md)
+**Learn more**: [Code Samurai Guide](docs/SDLC_ORCHESTRATOR_GUIDE.md)
 ```
 
 ---
 
-### Step 6: Verify Agent is Discoverable
+### Step 6: Verify Auto-Initialization Works
 
 After engineers install the extension:
 
-1. **Open GitHub Copilot Chat** in VS Code
-2. **Type `@`** - The agent picker should show
-3. **Look for "SDLC Orchestrator"** in the list
-4. **Alternative**: Type `@SDLC` to filter
+1. **Open any workspace** in VS Code
+2. **Check file explorer**: `.github/agents/code-samurai.agent.md` should exist
+3. **Check settings**: `.vscode/settings.json` should have `"github.copilot.chat.useProjectTemplates": true`
+4. **Open GitHub Copilot Chat panel**
+5. **Mode dropdown** should show "Code Samurai"
+6. **Alternative**: Type `@Code Samurai` to @ mention
 
 **Troubleshooting**:
 - If not visible, ensure `.github/agents/` folder is in workspace root

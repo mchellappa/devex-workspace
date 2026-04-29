@@ -175,7 +175,7 @@ public class {{className}} {
     public ResponseEntity<{{entityName}}Response> create(@Valid @RequestBody {{entityName}}Request request) {
         log.info("POST /{{resourceName}} - creating new {{resourceName}}");
         {{entityName}}Response created = {{camelCase serviceName}}.create(request);
-        log.info("Created {{resourceName}} with id: {}", created.getId());
+        log.info("Successfully created {{resourceName}}");
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 

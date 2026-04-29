@@ -738,11 +738,34 @@ Not satisfied with a section? Have more details to add?
     
     // Create a short filename to avoid ENAMETOOLONG errors
     // Truncate source filename if needed and add timestamp for uniqueness
-    const sourceBaseName = path.basename(sourceDoc.filePath, path.extname(sourceDoc.filePath));
+    let sourceBaseName: string;
+    if (sourceDoc.format === 'jira') {
+        // Extract issue key from jira:// URI
+        sourceBaseName = sourceDoc.filePath.replace(/^jira:\/\//, '');
+    } else {
+        sourceBaseName = path.basename(sourceDoc.filePath, path.extname(sourceDoc.filePath));
+    }
     const truncatedName = sourceBaseName.length > 50 ? sourceBaseName.substring(0, 50) : sourceBaseName;
     const timestamp = Date.now();
+    
+    // Determine output directory based on source type
+    let outputDir: string;
+    if (sourceDoc.format === 'jira') {
+        // For Jira sources, use workspace folder or temp directory
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (workspaceFolders && workspaceFolders.length > 0) {
+            outputDir = workspaceFolders[0].uri.fsPath;
+        } else {
+            // Fallback to home directory if no workspace is open
+            outputDir = process.env.USERPROFILE || process.env.HOME || '.';
+        }
+    } else {
+        // For file sources, use the same directory as the source file
+        outputDir = path.dirname(sourceDoc.filePath);
+    }
+    
     const outputPath = path.join(
-        path.dirname(sourceDoc.filePath),
+        outputDir,
         `LLD_${truncatedName}_${timestamp}.md`
     );
     

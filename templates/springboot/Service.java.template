@@ -113,7 +113,7 @@ public class {{className}} {
         
         {{entityName}} entity = mapper.toEntity(request);
         {{entityName}} saved = {{camelCase repositoryName}}.save(entity);
-        log.info("Created {{resourceName}} with id: {}", saved.getId());
+        log.info("Successfully created {{resourceName}}");
         return mapper.toResponse(saved);
     }
 
