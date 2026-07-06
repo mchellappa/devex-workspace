@@ -33,6 +33,8 @@ import { verifyToolRegistration } from './commands/diagnosticTools';
 import { generateAgentCommand } from './commands/generateAgent';
 import { generateSkillCommand } from './commands/generateSkill';
 import { manageDeployedAgentsCommand } from './commands/manageDeployedAgents';
+import { transcribeKTSessionsCommand } from './commands/transcribeKTSessions';
+import { structureKTTranscriptsCommand } from './commands/structureKTTranscripts';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -246,6 +248,18 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('devex.manageDeployedAgents', () =>
             manageDeployedAgentsCommand(context, telemetryService)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.transcribeKTSessions', () =>
+            transcribeKTSessionsCommand()
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('devex.structureKTTranscripts', () =>
+            structureKTTranscriptsCommand()
         )
     );
 

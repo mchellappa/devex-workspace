@@ -68,8 +68,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("getAll() - Should return all {{resourceName}}")
-    void testGetAll() {
+    @DisplayName("getAll: no params → returns all {{resourceName}}")
+    void getAll_returnsAllEntities() {
         List<{{entityName}}> entities = Arrays.asList(testEntity, new {{entityName}}());
         when({{camelCase repositoryName}}.findAll()).thenReturn(entities);
         when(mapper.toResponse(any({{entityName}}.class))).thenReturn(testResponse);
@@ -83,12 +83,12 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("getAll(Pageable) - Should return paginated {{resourceName}}")
-    void testGetAllWithPagination() {
+    @DisplayName("getAll: with pageable → returns paginated results")
+    void getAll_withPageable_returnsPaginatedResults() {
         Pageable pageable = PageRequest.of(0, 10);
         List<{{entityName}}> entities = Arrays.asList(testEntity);
         Page<{{entityName}}> entityPage = new PageImpl<>(entities, pageable, entities.size());
-        
+
         when({{camelCase repositoryName}}.findAll(pageable)).thenReturn(entityPage);
         when(mapper.toResponse(any({{entityName}}.class))).thenReturn(testResponse);
 
@@ -101,8 +101,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("getById() - Should return {{entityName}} when found")
-    void testGetById_Success() {
+    @DisplayName("getById: existing id → returns entity")
+    void getById_existingId_returnsEntity() {
         when({{camelCase repositoryName}}.findById(1L)).thenReturn(Optional.of(testEntity));
         when(mapper.toResponse(testEntity)).thenReturn(testResponse);
 
@@ -115,8 +115,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("getById() - Should return empty Optional when not found")
-    void testGetById_NotFound() {
+    @DisplayName("getById: unknown id → returns empty Optional")
+    void getById_unknownId_returnsEmpty() {
         when({{camelCase repositoryName}}.findById(999L)).thenReturn(Optional.empty());
 
         Optional<{{entityName}}Response> result = {{camelCase serviceName}}.getById(999L);
@@ -127,8 +127,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("create() - Should create new {{entityName}}")
-    void testCreate_Success() {
+    @DisplayName("create: valid request → persists and returns created entity")
+    void create_validRequest_returnsCreatedEntity() {
         when(mapper.toEntity(testRequest)).thenReturn(testEntity);
         when({{camelCase repositoryName}}.save(testEntity)).thenReturn(testEntity);
         when(mapper.toResponse(testEntity)).thenReturn(testResponse);
@@ -143,8 +143,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("create() - Should throw exception for null request")
-    void testCreate_NullRequest() {
+    @DisplayName("create: null request → throws IllegalArgumentException")
+    void create_nullRequest_throwsIllegalArgumentException() {
         assertThatThrownBy(() -> {{camelCase serviceName}}.create(null))
                 .isInstanceOf(IllegalArgumentException.class);
 
@@ -152,8 +152,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("update() - Should update existing {{entityName}}")
-    void testUpdate_Success() {
+    @DisplayName("update: existing id → persists and returns updated entity")
+    void update_existingId_returnsUpdatedEntity() {
         when({{camelCase repositoryName}}.findById(1L)).thenReturn(Optional.of(testEntity));
         when({{camelCase repositoryName}}.save(any({{entityName}}.class))).thenReturn(testEntity);
         when(mapper.toResponse(any({{entityName}}.class))).thenReturn(testResponse);
@@ -168,8 +168,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("update() - Should throw exception when not found")
-    void testUpdate_NotFound() {
+    @DisplayName("update: unknown id → throws ResourceNotFoundException")
+    void update_unknownId_throwsResourceNotFoundException() {
         when({{camelCase repositoryName}}.findById(999L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> {{camelCase serviceName}}.update(999L, testRequest))
@@ -182,8 +182,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("update() - Should throw exception for null request")
-    void testUpdate_NullRequest() {
+    @DisplayName("update: null request → throws IllegalArgumentException")
+    void update_nullRequest_throwsIllegalArgumentException() {
         assertThatThrownBy(() -> {{camelCase serviceName}}.update(1L, null))
                 .isInstanceOf(IllegalArgumentException.class);
 
@@ -191,8 +191,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("delete() - Should delete existing {{entityName}}")
-    void testDelete_Success() {
+    @DisplayName("delete: existing id → removes entity from database")
+    void delete_existingId_deletesEntity() {
         when({{camelCase repositoryName}}.existsById(1L)).thenReturn(true);
         doNothing().when({{camelCase repositoryName}}).deleteById(1L);
 
@@ -203,8 +203,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("delete() - Should throw exception when not found")
-    void testDelete_NotFound() {
+    @DisplayName("delete: unknown id → throws ResourceNotFoundException")
+    void delete_unknownId_throwsResourceNotFoundException() {
         when({{camelCase repositoryName}}.existsById(999L)).thenReturn(false);
 
         assertThatThrownBy(() -> {{camelCase serviceName}}.delete(999L))
@@ -217,8 +217,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("Mapper integration - Should correctly map entity to response")
-    void testMapperIntegration() {
+    @DisplayName("getById: existing id → delegates mapping to mapper")
+    void getById_existingId_invokesMapper() {
         when({{camelCase repositoryName}}.findById(1L)).thenReturn(Optional.of(testEntity));
         when(mapper.toResponse(testEntity)).thenReturn(testResponse);
 

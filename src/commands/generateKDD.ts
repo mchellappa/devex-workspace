@@ -50,6 +50,43 @@ interface DesignOption {
     riskMitigation?: string;
 }
 
+async function selectKddModel() {
+    const preferredFamilies = ['gpt-4o', 'gpt-4.1', 'gpt-4', 'claude'];
+
+    // First try the previously used family for compatibility with older installs.
+    let models = await vscode.lm.selectChatModels({
+        vendor: 'copilot',
+        family: 'gpt-4o'
+    });
+
+    // Fall back to any Copilot model in case family names changed after an update.
+    if (models.length === 0) {
+        models = await vscode.lm.selectChatModels({
+            vendor: 'copilot'
+        });
+    }
+
+    // Final fallback: any available chat model from the current VS Code provider context.
+    if (models.length === 0) {
+        models = await vscode.lm.selectChatModels({});
+    }
+
+    if (models.length === 0) {
+        throw new Error('No AI models available. Ensure GitHub Copilot Chat is installed, you are signed in, and a chat model is enabled.');
+    }
+
+    const scoreModel = (model: { family: string; id: string }) => {
+        const family = model.family.toLowerCase();
+        const id = model.id.toLowerCase();
+        const familyIndex = preferredFamilies.findIndex((candidate) => family.includes(candidate));
+        const idIndex = preferredFamilies.findIndex((candidate) => id.includes(candidate));
+        const matchIndex = familyIndex >= 0 ? familyIndex : idIndex;
+        return matchIndex >= 0 ? (preferredFamilies.length - matchIndex) : 0;
+    };
+
+    return [...models].sort((a, b) => scoreModel(b) - scoreModel(a))[0];
+}
+
 export async function generateKDD(context: vscode.ExtensionContext): Promise<void> {
     const kddContext: KDDContext = {
         problemStatement: '',
@@ -137,16 +174,7 @@ async function generateDesignOptions(kddContext: KDDContext): Promise<void> {
         cancellable: false
     }, async () => {
         try {
-            const models = await vscode.lm.selectChatModels({
-                vendor: 'copilot',
-                family: 'gpt-4o'
-            });
-
-            if (models.length === 0) {
-                throw new Error('No AI models available');
-            }
-
-            const model = models[0];
+            const model = await selectKddModel();
 
             const prompt = `You are an experienced software architect. Based on the following context, generate 3 distinct design options to solve the problem.
 
@@ -293,16 +321,7 @@ async function regenerateOption(kddContext: KDDContext, optionIndex: number, pan
         cancellable: false
     }, async () => {
         try {
-            const models = await vscode.lm.selectChatModels({
-                vendor: 'copilot',
-                family: 'gpt-4o'
-            });
-
-            if (models.length === 0) {
-                throw new Error('No AI models available');
-            }
-
-            const model = models[0];
+            const model = await selectKddModel();
 
             const prompt = `You are an experienced software architect. Based on the following context and feedback, regenerate the design option.
 
@@ -408,16 +427,7 @@ async function evaluateOptions(kddContext: KDDContext): Promise<void> {
 
 async function generateAIRecommendation(kddContext: KDDContext): Promise<void> {
     try {
-            const models = await vscode.lm.selectChatModels({
-                vendor: 'copilot',
-                family: 'gpt-4o'
-            });
-
-            if (models.length === 0) {
-                throw new Error('No AI models available');
-            }
-
-            const model = models[0];
+            const model = await selectKddModel();
 
             const optionsText = kddContext.options.map((opt, i) => `
 Option ${i + 1}: ${opt.title}
@@ -577,16 +587,7 @@ async function enrichSelectedOption(kddContext: KDDContext): Promise<void> {
 
             const selectedOpt = kddContext.options[kddContext.selectedOption!];
 
-            const models = await vscode.lm.selectChatModels({
-                vendor: 'copilot',
-                family: 'gpt-4o'
-            });
-
-            if (models.length === 0) {
-                throw new Error('No AI models available');
-            }
-
-            const model = models[0];
+            const model = await selectKddModel();
 
             progress.report({ increment: 30, message: 'Generating implementation details...' });
 

@@ -76,8 +76,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("GET /{{resourceName}} - Should return all {{resourceName}}")
-    void testGetAll() throws Exception {
+    @DisplayName("getAll: no params → returns all {{resourceName}}")
+    void getAll_returnsAllEntities() throws Exception {
         when({{camelCase serviceName}}.getAll()).thenReturn(testResponseList);
 
         mockMvc.perform(get("/{{resourceName}}"))
@@ -90,8 +90,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("GET /{{resourceName}} with pagination - Should return paginated results")
-    void testGetAllWithPagination() throws Exception {
+    @DisplayName("getAll: with page params → returns paginated results")
+    void getAll_withPageParams_returnsPaginatedResults() throws Exception {
         Page<{{entityName}}Response> page = new PageImpl<>(testResponseList, PageRequest.of(0, 10), testResponseList.size());
         when({{camelCase serviceName}}.getAll(ArgumentMatchers.any())).thenReturn(page);
 
@@ -106,8 +106,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("GET /{{resourceName}}/{id} - Should return {{entityName}} when found")
-    void testGetById_Success() throws Exception {
+    @DisplayName("getById: existing id → returns entity")
+    void getById_existingId_returnsEntity() throws Exception {
         when({{camelCase serviceName}}.getById(1L)).thenReturn(Optional.of(testResponse));
 
         mockMvc.perform(get("/{{resourceName}}/1"))
@@ -119,8 +119,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("GET /{{resourceName}}/{id} - Should return 404 when not found")
-    void testGetById_NotFound() throws Exception {
+    @DisplayName("getById: unknown id → 404 Not Found")
+    void getById_unknownId_returns404() throws Exception {
         when({{camelCase serviceName}}.getById(999L)).thenReturn(Optional.empty());
 
         mockMvc.perform(get("/{{resourceName}}/999"))
@@ -130,8 +130,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("POST /{{resourceName}} - Should create new {{entityName}}")
-    void testCreate_Success() throws Exception {
+    @DisplayName("create: valid request → 201 Created")
+    void create_validRequest_returns201() throws Exception {
         when({{camelCase serviceName}}.create(ArgumentMatchers.any({{entityName}}Request.class))).thenReturn(testResponse);
 
         mockMvc.perform(post("/{{resourceName}}")
@@ -144,8 +144,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("PUT /{{resourceName}}/{id} - Should update existing {{entityName}}")
-    void testUpdate_Success() throws Exception {
+    @DisplayName("update: existing id → returns updated entity")
+    void update_existingId_returnsUpdatedEntity() throws Exception {
         when({{camelCase serviceName}}.update(ArgumentMatchers.eq(1L), ArgumentMatchers.any({{entityName}}Request.class))).thenReturn(testResponse);
 
         mockMvc.perform(put("/{{resourceName}}/1")
@@ -158,8 +158,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("PUT /{{resourceName}}/{id} - Should return 404 when updating non-existent {{entityName}}")
-    void testUpdate_NotFound() throws Exception {
+    @DisplayName("update: unknown id → 404 Not Found")
+    void update_unknownId_returns404() throws Exception {
         when({{camelCase serviceName}}.update(ArgumentMatchers.eq(999L), ArgumentMatchers.any({{entityName}}Request.class)))
                 .thenThrow(new ResourceNotFoundException("{{entityName}}", "id", 999L));
 
@@ -172,8 +172,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("DELETE /{{resourceName}}/{id} - Should delete existing {{entityName}}")
-    void testDelete_Success() throws Exception {
+    @DisplayName("delete: existing id → 204 No Content")
+    void delete_existingId_returns204() throws Exception {
         doNothing().when({{camelCase serviceName}}).delete(1L);
 
         mockMvc.perform(delete("/{{resourceName}}/1"))
@@ -183,8 +183,8 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("DELETE /{{resourceName}}/{id} - Should return 404 when deleting non-existent {{entityName}}")
-    void testDelete_NotFound() throws Exception {
+    @DisplayName("delete: unknown id → 404 Not Found")
+    void delete_unknownId_returns404() throws Exception {
         doThrow(new ResourceNotFoundException("{{entityName}}", "id", 999L))
                 .when({{camelCase serviceName}}).delete(999L);
 

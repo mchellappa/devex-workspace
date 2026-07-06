@@ -38,6 +38,36 @@ export interface JiraConfig {
     apiToken: string;
 }
 
+/**
+ * Convert a plain-text/markdown string to Atlassian Document Format (ADF).
+ * ADF text nodes cannot contain newline characters — each line becomes its own paragraph.
+ * Caps total content at 30,000 characters to stay within Jira's field limits.
+ */
+function textToADF(text: string): object {
+    const MAX_CHARS = 30000;
+    let content = text;
+    if (content.length > MAX_CHARS) {
+        content = content.substring(0, MAX_CHARS) +
+            '\n[Content truncated — see DevEx output panel for full ERD details]';
+    }
+
+    const paragraphs = content
+        .split('\n')
+        .filter(line => line.trim().length > 0)
+        .map(line => ({
+            type: 'paragraph',
+            content: [{ type: 'text', text: line }]
+        }));
+
+    return {
+        type: 'doc',
+        version: 1,
+        content: paragraphs.length > 0
+            ? paragraphs
+            : [{ type: 'paragraph', content: [{ type: 'text', text: ' ' }] }]
+    };
+}
+
 export class JiraService {
     private config: JiraConfig | null = null;
 
@@ -872,23 +902,10 @@ export class JiraService {
             const url = `${this.config!.baseUrl}/rest/api/3/issue`;
             const auth = Buffer.from(`${this.config!.email}:${this.config!.apiToken}`).toString('base64');
 
-            // Convert description to ADF format if it's a string
+            // Convert description to ADF format if it's a string.
+            // ADF text nodes cannot contain \n — each line must be a separate paragraph node.
             if (issueData.fields.description && typeof issueData.fields.description === 'string') {
-                issueData.fields.description = {
-                    type: 'doc',
-                    version: 1,
-                    content: [
-                        {
-                            type: 'paragraph',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: issueData.fields.description
-                                }
-                            ]
-                        }
-                    ]
-                };
+                issueData.fields.description = textToADF(issueData.fields.description);
             }
 
             const response = await fetch(url, {

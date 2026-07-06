@@ -2,7 +2,7 @@
   "name": "devex-ai-assistant",
   "displayName": "Spec2PR",
   "description": "Complete SDLC acceleration platform with Code Samurai AI agent: LLD review, OpenAPI generation, Spring Boot code generation, AI-enhanced RCA, deployment automation, and productivity analytics. Auto-initializing workflow guide powered by GitHub Copilot.",
-  "version": "1.11.0",
+  "version": "1.11.17",
   "publisher": "CodeSamurai",
   "icon": "images/icon.png",
   "private": true,
@@ -272,6 +272,18 @@
         "title": "Manage Deployed Agents & Skills",
         "category": "DevEx",
         "icon": "$(extensions)"
+      },
+      {
+        "command": "devex.transcribeKTSessions",
+        "title": "Transcribe KT Session Recordings",
+        "category": "DevEx",
+        "icon": "$(record)"
+      },
+      {
+        "command": "devex.structureKTTranscripts",
+        "title": "Structure KT Transcripts",
+        "category": "DevEx",
+        "icon": "$(book)"
       }
     ],
     "menus": {

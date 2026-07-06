@@ -140,3 +140,75 @@ SWIFT-12345: Add order cancellation endpoint
 - Added OrderCancellationService with status validation
 - Unit tests cover happy path and invalid state transition
 ```
+
+---
+
+## Live Ticket Fetching
+
+The skill ships companion scripts that fetch a Jira Cloud ticket via REST API.  
+**One-time setup required** before fetching works.
+
+### First-time setup
+
+**macOS / Linux:**
+```bash
+~/.copilot/skills/jira-workflow/setup.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+~/.copilot/skills/jira-workflow/setup.ps1
+```
+
+The setup wizard saves `baseUrl` and `email` to `~/.devex/jira-config.json` (chmod 600).  
+The API token is **never stored in a file** — it is set as an environment variable (`JIRA_API_TOKEN`) in your shell profile, or (macOS only) in the system Keychain.
+
+### Fetching a ticket
+
+**macOS / Linux:**
+```bash
+~/.copilot/skills/jira-workflow/fetch.sh PROJ-123
+```
+
+**Windows (PowerShell):**
+```powershell
+~/.copilot/skills/jira-workflow/fetch.ps1 -TicketKey PROJ-123
+```
+
+The scripts output **raw Jira Cloud API JSON** (REST API v3, Jira Cloud only).
+
+### Parsing the JSON response
+
+When a fetch script returns JSON, extract these fields:
+
+| Field path | Meaning |
+|---|---|
+| `.fields.summary` | Story title |
+| `.fields.description` | Story description (Atlassian Document Format — ADF) |
+| `.fields.status.name` | Current workflow state |
+| `.fields.issuetype.name` | Issue type (Story, Bug, Task…) |
+| `.fields.priority.name` | Priority |
+| `.fields.assignee.displayName` | Assignee (may be `null`) |
+| `.fields.reporter.displayName` | Reporter |
+| `.fields.labels[]` | Labels array |
+| `.fields.comment.comments[]` | Comments array (each has `.body` in ADF and `.author.displayName`) |
+
+**ADF description extraction:** The `.fields.description` field is an Atlassian Document Format object, not plain text. To get readable text, recursively collect all nodes where `"type": "text"` and join their `"text"` values.
+
+### Credential resolution (no config needed if env vars are set)
+
+Scripts resolve credentials in this order — no setup wizard needed if env vars are already set:
+
+```bash
+# macOS/Linux — add to ~/.zshrc or ~/.bashrc
+export JIRA_BASE_URL='https://yourcompany.atlassian.net'
+export JIRA_EMAIL='you@company.com'
+export JIRA_API_TOKEN='<token>'
+```
+
+```powershell
+# Windows — add to $PROFILE
+$env:JIRA_BASE_URL  = 'https://yourcompany.atlassian.net'
+$env:JIRA_EMAIL     = 'you@company.com'
+$env:JIRA_API_TOKEN = '<token>'
+```

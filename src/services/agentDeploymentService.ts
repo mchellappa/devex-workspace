@@ -229,6 +229,11 @@ export class AgentDeploymentService {
                 this.copyDirectoryRecursive(srcPath, destPath);
             } else {
                 fs.copyFileSync(srcPath, destPath);
+                // Restore executable bit for shell scripts on non-Windows platforms.
+                // fs.copyFileSync does not preserve file mode bits.
+                if (process.platform !== 'win32' && entry.name.endsWith('.sh')) {
+                    fs.chmodSync(destPath, 0o755);
+                }
             }
         }
     }
