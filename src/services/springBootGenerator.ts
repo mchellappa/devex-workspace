@@ -329,7 +329,9 @@ export class SpringBootGenerator {
             'ODataQueryOptions.java.template',
             'ODataQueryParser.java.template',
             'ODataSpecificationBuilder.java.template',
-            'ODataResponse.java.template'
+            'ODataResponse.java.template',
+            'ODataEdmProvider.java.template',
+            'ODataMetadataController.java.template'
         ];
 
         const context = {

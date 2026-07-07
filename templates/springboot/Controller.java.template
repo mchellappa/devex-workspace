@@ -134,7 +134,10 @@ public class {{className}} {
         );
 
         log.debug("Retrieved {} of {} {{resourceName}}", resultPage.getNumberOfElements(), resultPage.getTotalElements());
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok()
+                .header("OData-Version", "4.0")
+                .header("Content-Type", "application/json;odata.metadata=minimal;charset=utf-8")
+                .body(response);
     }
 
     /**
@@ -163,7 +166,10 @@ public class {{className}} {
         return {{camelCase serviceName}}.getById(id)
                 .map(response -> {
                     log.debug("Found {{resourceName}} with id: {}", id);
-                    return ResponseEntity.ok(response);
+                    return ResponseEntity.ok()
+                            .header("OData-Version", "4.0")
+                            .header("Content-Type", "application/json;odata.metadata=minimal;charset=utf-8")
+                            .body(response);
                 })
                 .orElseGet(() -> {
                     log.debug("{{entityName}} not found with id: {}", id);
