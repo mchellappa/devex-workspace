@@ -366,21 +366,47 @@ export class SpringBootGenerator {
         const generatedSchemas = new Set<string>();
         
         for (const resource of resources) {
-            const schema = this.findSchemaForResource(resource, schemas);
-            if (schema) {
-                resourceSchemas.add(schema.name);
-                // Track all schemas generated for this resource
-                const entityName = this.toPascalCase(resource);
-                generatedSchemas.add(schema.name);
-                generatedSchemas.add(entityName + 'Request');
-                generatedSchemas.add(entityName + 'Response');
+            const entityName = this.toPascalCase(resource);
+            // Track all schemas that could match this resource (case-insensitive)
+            for (const schemaName of Object.keys(schemas)) {
+                const schemaLower = schemaName.toLowerCase();
+                const resourceLower = resource.toLowerCase();
+                const singular = this.toSingular(resourceLower);
+                const plural = this.toPlural(resourceLower);
+                if (schemaLower === resourceLower || schemaLower === singular || schemaLower === plural) {
+                    generatedSchemas.add(schemaName);
+                }
             }
+            // Also track the Request/Response DTOs we generated
+            generatedSchemas.add(entityName + 'Request');
+            generatedSchemas.add(entityName + 'Response');
         }
 
         // Generate DTOs for schemas not already generated as resources
         for (const [schemaName, schema] of Object.entries(schemas)) {
             if (generatedSchemas.has(schemaName)) {
                 logger.info(`Skipping ${schemaName} - already generated as resource or DTO`);
+                continue;
+            }
+
+            // Skip OData envelope schemas - these are handled by dedicated OData templates in odata/ package
+            const odataSchemaPatterns = [
+                /^odata/i,                    // ODataCollectionResponse, ODataResponse, etc.
+                /odata.*response/i,           // *ODataResponse, *ODataCollectionResponse
+                /odata.*envelope/i,           // ODataEnvelope
+                /collection.*response/i       // CollectionResponse (generic envelope)
+            ];
+            
+            const isODataSchema = odataSchemaPatterns.some(pattern => pattern.test(schemaName));
+            if (isODataSchema) {
+                logger.info(`Skipping ${schemaName} - OData envelope schema, handled by dedicated OData templates`);
+                continue;
+            }
+
+            // Skip schemas whose properties are all invalid Java identifiers (e.g., @odata.* fields)
+            const schemaFields = this.convertOpenAPISchemaToFields(schema);
+            if (schemaFields.length === 0 && schema.properties && Object.keys(schema.properties).length > 0) {
+                logger.info(`Skipping ${schemaName} - all fields have invalid Java identifiers`);
                 continue;
             }
 
@@ -418,8 +444,16 @@ export class SpringBootGenerator {
     ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         
+        // Convert OpenAPI properties to fields array if needed
+        const fields = this.convertOpenAPISchemaToFields(schema);
+        
+        if (fields.length === 0) {
+            logger.warn(`Skipping DTO generation for ${schemaName} - no fields found`);
+            return;
+        }
+        
         // Use the centralized import calculation
-        const imports = this.calculateImports(schema.fields, config.packageName, Array.from(this.entityNames));
+        const imports = this.calculateImports(fields, config.packageName, Array.from(this.entityNames));
         
         // Generate simple DTO class
         const dtoTemplate = await this.templateProvider.readSpringBootTemplate('Dto.java.template');
@@ -427,8 +461,8 @@ export class SpringBootGenerator {
         const dtoContent = dtoCompiled({
             packageName: config.packageName,
             className: schemaName,
-            fields: schema.fields,
-            description: schema.description,
+            fields: fields,
+            description: schema.description || `${schemaName} data transfer object`,
             imports: imports.join('\n')
         });
         
@@ -800,8 +834,114 @@ export class SpringBootGenerator {
     }
 
     /**
+     * Convert raw OpenAPI schema properties into our internal fields array format.
+     * Handles the OpenAPI format: { type: 'object', properties: { fieldName: { type: '...', format: '...' } }, required: [...] }
+     * Converts to: [{ name, type, required, isString }]
+     */
+    private convertOpenAPISchemaToFields(schema: any): any[] {
+        if (!schema) {
+            return [];
+        }
+
+        // If already in our format (has fields array), return as-is
+        if (schema.fields && Array.isArray(schema.fields)) {
+            return schema.fields;
+        }
+
+        // If no properties, return empty
+        if (!schema.properties || typeof schema.properties !== 'object') {
+            return [];
+        }
+
+        const requiredFields = new Set(schema.required || []);
+        const fields: any[] = [];
+
+        for (const [propName, propSchema] of Object.entries(schema.properties)) {
+            // Skip fields with names that are not valid Java identifiers
+            // (e.g., @odata.context, @odata.count, @odata.nextLink)
+            if (!this.isValidJavaIdentifier(propName)) {
+                logger.warn(`Skipping field "${propName}" - not a valid Java identifier`);
+                continue;
+            }
+            const prop = propSchema as any;
+            const javaType = this.openAPITypeToJava(prop);
+            fields.push({
+                name: propName,
+                type: javaType,
+                required: requiredFields.has(propName),
+                isString: javaType === 'String'
+            });
+        }
+
+        return fields;
+    }
+
+    /**
+     * Check if a string is a valid Java identifier.
+     * Must start with a letter, underscore, or dollar sign, followed by letters, digits, underscores, or dollar signs.
+     */
+    private isValidJavaIdentifier(name: string): boolean {
+        if (!name || name.length === 0) {
+            return false;
+        }
+        return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name);
+    }
+
+    /**
+     * Map OpenAPI type/format to Java type
+     */
+    private openAPITypeToJava(prop: any): string {
+        if (!prop) {
+            return 'String';
+        }
+
+        // Handle $ref
+        if (prop.$ref) {
+            const refParts = prop.$ref.split('/');
+            return refParts[refParts.length - 1];
+        }
+
+        // Handle arrays
+        if (prop.type === 'array' && prop.items) {
+            const itemType = this.openAPITypeToJava(prop.items);
+            return `List<${itemType}>`;
+        }
+
+        // Handle type + format combinations
+        switch (prop.type) {
+            case 'integer':
+                return prop.format === 'int64' ? 'Long' : 'Integer';
+            case 'number':
+                return prop.format === 'double' ? 'Double' : 'BigDecimal';
+            case 'boolean':
+                return 'Boolean';
+            case 'string':
+                if (prop.format === 'date-time') {
+                    return 'LocalDateTime';
+                }
+                if (prop.format === 'date') {
+                    return 'LocalDate';
+                }
+                if (prop.format === 'time') {
+                    return 'LocalTime';
+                }
+                return 'String';
+            case 'object':
+                // If it has additionalProperties, use Map
+                if (prop.additionalProperties) {
+                    const valueType = this.openAPITypeToJava(prop.additionalProperties);
+                    return `Map<String, ${valueType}>`;
+                }
+                return 'Object';
+            default:
+                return 'String';
+        }
+    }
+
+    /**
      * Find matching schema for a resource name
      * Tries to match by singular/plural forms
+     * Returns normalized schema with fields array
      */
     private findSchemaForResource(resource: string, schemas: Record<string, any>): any | undefined {
         if (!resource || Object.keys(schemas).length === 0) {
@@ -815,14 +955,14 @@ export class SpringBootGenerator {
         for (const [schemaName, schema] of Object.entries(schemas)) {
             if (schemaName.toLowerCase() === resourceLower) {
                 logger.info(`Found exact schema match: ${schemaName} for resource ${resource}`);
-                return schema;
+                return this.normalizeSchema(schemaName, schema);
             }
         }
 
         // Try PascalCase match
         if (schemas[resourcePascal]) {
             logger.info(`Found PascalCase schema match: ${resourcePascal} for resource ${resource}`);
-            return schemas[resourcePascal];
+            return this.normalizeSchema(resourcePascal, schemas[resourcePascal]);
         }
 
         // Try singular/plural variations
@@ -833,12 +973,25 @@ export class SpringBootGenerator {
             const schemaLower = schemaName.toLowerCase();
             if (schemaLower === singular || schemaLower === plural) {
                 logger.info(`Found singular/plural schema match: ${schemaName} for resource ${resource}`);
-                return schema;
+                return this.normalizeSchema(schemaName, schema);
             }
         }
 
         logger.warn(`No schema found for resource: ${resource}`);
         return undefined;
+    }
+
+    /**
+     * Normalize a schema to ensure it has a name and fields array
+     */
+    private normalizeSchema(name: string, schema: any): any {
+        const fields = this.convertOpenAPISchemaToFields(schema);
+        return {
+            ...schema,
+            name,
+            fields: fields.length > 0 ? fields : undefined,
+            description: schema.description || `${name} schema`
+        };
     }
 
     /**
