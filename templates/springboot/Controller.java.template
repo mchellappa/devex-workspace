@@ -3,16 +3,17 @@ package {{packageName}}.controller;
 import {{packageName}}.dto.{{entityName}}Request;
 import {{packageName}}.dto.{{entityName}}Response;
 import {{packageName}}.service.{{serviceName}};
+import {{packageName}}.odata.ODataQueryParser;
+import {{packageName}}.odata.ODataQueryOptions;
+import {{packageName}}.odata.ODataResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.Assert;
 import org.springframework.web.bind.annotation.*;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -23,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * REST controller for managing {{entityName}} resources.
@@ -51,66 +53,88 @@ public class {{className}} {
     private static final Logger log = LoggerFactory.getLogger({{className}}.class);
     
     private final {{serviceName}} {{camelCase serviceName}};
+    private final ODataQueryParser odataQueryParser;
 
     /**
      * Constructs a new {{className}} with required dependencies.
      *
      * @param {{camelCase serviceName}} the service layer for business logic
+     * @param odataQueryParser the OData query parameter parser
      */
     @Autowired
-    public {{className}}({{serviceName}} {{camelCase serviceName}}) {
+    public {{className}}({{serviceName}} {{camelCase serviceName}}, ODataQueryParser odataQueryParser) {
         Assert.notNull({{camelCase serviceName}}, "Service must not be null");
+        Assert.notNull(odataQueryParser, "ODataQueryParser must not be null");
         this.{{camelCase serviceName}} = {{camelCase serviceName}};
+        this.odataQueryParser = odataQueryParser;
     }
 
     /**
-     * Retrieves all {{resourceName}}, with optional pagination and sorting.
+     * Retrieves {{resourceName}} with OData v4 query support.
      * <p>
-     * If page and size parameters are provided, returns paginated results with
-     * X-Total-Count header. Otherwise returns all {{resourceName}} (not recommended
-     * for large datasets).
+     * Supports the following OData query parameters:
+     * <ul>
+     *   <li>{@code $filter} - Filter expression (e.g., {@code status eq 'ACTIVE'})</li>
+     *   <li>{@code $orderby} - Sort expression (e.g., {@code createdDate desc})</li>
+     *   <li>{@code $top} - Max records to return (default: 50, max: 100)</li>
+     *   <li>{@code $skip} - Records to skip for pagination</li>
+     *   <li>{@code $select} - Fields to include in response</li>
+     *   <li>{@code $expand} - Related entities to include</li>
+     *   <li>{@code $count} - Include total count in response</li>
+     * </ul>
      * </p>
      *
-     * @param page the page number (0-indexed, optional)
-     * @param size the page size (optional)
-     * @param sort the field name to sort by (optional)
-     * @return list of {{resourceName}} or paginated subset
+     * @param params all query parameters including OData system query options
+     * @return OData v4 compliant response with matching {{resourceName}}
      */
     @GetMapping
     @Operation(
         summary = "Get all {{resourceName}}",
-        description = "Retrieve all {{resourceName}} with optional pagination and sorting. Use pagination for production datasets."
+        description = "Retrieve {{resourceName}} with OData v4 query support. Supports $filter, $orderby, $top, $skip, $select, $expand, and $count.",
+        parameters = {
+            @Parameter(name = "$filter", description = "OData filter expression (e.g., status eq 'ACTIVE' and amount gt 1000)", example = "status eq 'ACTIVE'"),
+            @Parameter(name = "$orderby", description = "Sort fields with direction (e.g., createdDate desc, name asc)", example = "createdDate desc"),
+            @Parameter(name = "$top", description = "Maximum records to return (default: 50, max: 100)", example = "50"),
+            @Parameter(name = "$skip", description = "Number of records to skip", example = "0"),
+            @Parameter(name = "$select", description = "Comma-separated fields to return", example = "id,name,status"),
+            @Parameter(name = "$expand", description = "Comma-separated related entities to include", example = ""),
+            @Parameter(name = "$count", description = "Include total count in response", example = "true")
+        }
     )
     @ApiResponses(value = {
         @ApiResponse(
             responseCode = "200",
             description = "Successfully retrieved {{resourceName}}",
-            content = @Content(schema = @Schema(implementation = {{entityName}}Response.class))
+            content = @Content(schema = @Schema(implementation = ODataResponse.class))
         ),
-        @ApiResponse(responseCode = "400", description = "Invalid pagination parameters"),
+        @ApiResponse(responseCode = "400", description = "Invalid OData query parameters or filter syntax"),
         @ApiResponse(responseCode = "500", description = "Internal server error")
     })
-    public ResponseEntity<List<{{entityName}}Response>> getAll(
-            @RequestParam(required = false) Integer page,
-            @RequestParam(required = false) Integer size,
-            @RequestParam(required = false) String sort
+    public ResponseEntity<ODataResponse<{{entityName}}Response>> getAll(
+            @RequestParam Map<String, String> params
     ) {
-        log.debug("GET /{{resourceName}} - page: {}, size: {}, sort: {}", page, size, sort);
-        
-        if (page != null && size != null) {
-            Sort sortObj = sort != null ? Sort.by(sort) : Sort.unsorted();
-            Pageable pageable = PageRequest.of(page, size, sortObj);
-            Page<{{entityName}}Response> resultPage = {{camelCase serviceName}}.getAll(pageable);
-            log.debug("Retrieved {} of {} {{resourceName}}", resultPage.getNumberOfElements(), resultPage.getTotalElements());
-            return ResponseEntity.ok()
-                    .header("X-Total-Count", String.valueOf(resultPage.getTotalElements()))
-                    .header("X-Total-Pages", String.valueOf(resultPage.getTotalPages()))
-                    .body(resultPage.getContent());
+        log.debug("GET /{{resourceName}} with OData params: {}", params);
+
+        ODataQueryOptions options = odataQueryParser.parse(params);
+        Page<{{entityName}}Response> resultPage = {{camelCase serviceName}}.findAll(options);
+
+        String contextUrl = "$metadata#{{resourceName}}";
+        String nextLink = null;
+        if (resultPage.hasNext()) {
+            int nextSkip = options.getSkip() + options.getTop();
+            nextLink = "/{{resourceName}}?$skip=" + nextSkip + "&$top=" + options.getTop();
         }
-        
-        List<{{entityName}}Response> result = {{camelCase serviceName}}.getAll();
-        log.debug("Retrieved {} {{resourceName}}", result.size());
-        return ResponseEntity.ok(result);
+
+        ODataResponse<{{entityName}}Response> response = ODataResponse.fromPage(
+                resultPage.getContent(),
+                resultPage.getTotalElements(),
+                contextUrl,
+                nextLink,
+                options.isCount()
+        );
+
+        log.debug("Retrieved {} of {} {{resourceName}}", resultPage.getNumberOfElements(), resultPage.getTotalElements());
+        return ResponseEntity.ok(response);
     }
 
     /**

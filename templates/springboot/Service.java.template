@@ -6,9 +6,12 @@ import {{packageName}}.dto.{{entityName}}Response;
 import {{packageName}}.repository.{{repositoryName}};
 import {{packageName}}.mapper.{{entityName}}Mapper;
 import {{packageName}}.exception.ResourceNotFoundException;
+import {{packageName}}.odata.ODataQueryOptions;
+import {{packageName}}.odata.ODataSpecificationBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.Assert;
@@ -37,19 +40,24 @@ public class {{className}} {
     
     private final {{repositoryName}} {{camelCase repositoryName}};
     private final {{entityName}}Mapper mapper;
+    private final ODataSpecificationBuilder specificationBuilder;
 
     /**
      * Constructs a new {{className}} with required dependencies.
      *
      * @param {{camelCase repositoryName}} the repository for data access operations
      * @param mapper the mapper for converting between entities and DTOs
+     * @param specificationBuilder the OData filter-to-JPA specification translator
      */
     @Autowired
-    public {{className}}({{repositoryName}} {{camelCase repositoryName}}, {{entityName}}Mapper mapper) {
+    public {{className}}({{repositoryName}} {{camelCase repositoryName}}, {{entityName}}Mapper mapper,
+                         ODataSpecificationBuilder specificationBuilder) {
         Assert.notNull({{camelCase repositoryName}}, "Repository must not be null");
         Assert.notNull(mapper, "Mapper must not be null");
+        Assert.notNull(specificationBuilder, "ODataSpecificationBuilder must not be null");
         this.{{camelCase repositoryName}} = {{camelCase repositoryName}};
         this.mapper = mapper;
+        this.specificationBuilder = specificationBuilder;
     }
 
     /**
@@ -90,6 +98,35 @@ public class {{className}} {
                 .map(mapper::toResponse);
         log.debug("Retrieved {} {{resourceName}} out of {} total", 
                   result.getNumberOfElements(), result.getTotalElements());
+        return result;
+    }
+
+    /**
+     * Retrieves {{resourceName}} using OData v4 query options.
+     * <p>
+     * Translates OData $filter into a JPA {@link Specification} and $top/$skip/$orderby
+     * into a {@link Pageable}, then delegates to the repository's
+     * {@code findAll(Specification, Pageable)} method.
+     * </p>
+     *
+     * @param options the parsed OData query options (must not be null)
+     * @return a page of {{resourceName}} matching the OData query
+     */
+    @Transactional(readOnly = true)
+    public Page<{{entityName}}Response> findAll(ODataQueryOptions options) {
+        Assert.notNull(options, "ODataQueryOptions must not be null");
+        log.debug("Finding {{resourceName}} with OData options - filter: {}, orderby: {}, top: {}, skip: {}",
+                  options.getFilter(), options.getOrderby(), options.getTop(), options.getSkip());
+
+        Specification<{{entityName}}> spec = options.hasFilter()
+                ? specificationBuilder.buildSpecification(options.getFilter())
+                : null;
+
+        Pageable pageable = options.toPageable();
+        Page<{{entityName}}Response> result = {{camelCase repositoryName}}.findAll(spec, pageable)
+                .map(mapper::toResponse);
+
+        log.debug("Found {} of {} {{resourceName}}", result.getNumberOfElements(), result.getTotalElements());
         return result;
     }
 

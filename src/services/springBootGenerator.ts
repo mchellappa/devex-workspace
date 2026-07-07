@@ -133,6 +133,10 @@ export class SpringBootGenerator {
             this.entityNames = new Set(resources.map(r => this.toPascalCase(r)));
             logger.info(`Tracked ${this.entityNames.size} entities for import resolution: ${Array.from(this.entityNames).join(', ')}`);
 
+            // Generate OData support classes (shared across all resources)
+            logger.info('Generating OData support classes...');
+            await this.generateODataClasses(projectPath, config);
+
             // Generate all remaining schemas as DTOs (nested types that aren't resources)
             logger.info('Generating remaining schema DTOs...');
             await this.generateRemainingSchemas(projectPath, config, resources, schemas);
@@ -186,6 +190,7 @@ export class SpringBootGenerator {
             path.join(projectPath, 'src', 'main', 'java', packagePath, 'dto'),
             path.join(projectPath, 'src', 'main', 'java', packagePath, 'exception'),
             path.join(projectPath, 'src', 'main', 'java', packagePath, 'security'),
+            path.join(projectPath, 'src', 'main', 'java', packagePath, 'odata'),
             path.join(projectPath, 'src', 'main', 'java', packagePath, 'util'),
             path.join(projectPath, 'src', 'main', 'resources'),
             path.join(projectPath, 'src', 'test', 'java', packagePath)
@@ -303,6 +308,43 @@ export class SpringBootGenerator {
         }
         
         return resources;
+    }
+
+    /**
+     * Generates the shared OData v4 support classes in the odata/ package.
+     * These are entity-agnostic utility classes used by all controllers and services.
+     * 
+     * Generated classes:
+     * - ODataQueryOptions: Parsed query options POJO with toPageable() conversion
+     * - ODataQueryParser: @Component that parses raw request params into ODataQueryOptions
+     * - ODataSpecificationBuilder: Translates OData $filter into JPA Specifications
+     * - ODataResponse: Generic OData v4 response envelope
+     */
+    private async generateODataClasses(projectPath: string, config: SpringBootProjectConfig): Promise<void> {
+        const packagePath = config.packageName.replace(/\./g, '/');
+        const odataDir = path.join(projectPath, 'src', 'main', 'java', packagePath, 'odata');
+        await fs.promises.mkdir(odataDir, { recursive: true });
+
+        const odataTemplates = [
+            'ODataQueryOptions.java.template',
+            'ODataQueryParser.java.template',
+            'ODataSpecificationBuilder.java.template',
+            'ODataResponse.java.template'
+        ];
+
+        const context = {
+            packageName: config.packageName
+        };
+
+        for (const templateName of odataTemplates) {
+            const template = await this.templateProvider.readSpringBootTemplate(templateName);
+            const compiled = Handlebars.compile(template);
+            const content = compiled(context);
+            const fileName = templateName.replace('.template', '');
+            const filePath = path.join(odataDir, fileName);
+            await fs.promises.writeFile(filePath, content, 'utf-8');
+            logger.info(`Generated OData class: ${fileName}`);
+        }
     }
 
     /**

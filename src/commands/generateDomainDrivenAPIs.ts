@@ -10,6 +10,7 @@ import { analyzeERDImage } from './analyzeERD';
 interface DomainInfo {
     name: string;
     erdImagePath?: string;
+    mermaidData?: string;
     csvData?: string;
     entities: string[];
 }
@@ -141,21 +142,25 @@ export async function generateDomainDrivenAPIsCommand(): Promise<void> {
             
             progress.report({ increment: 5, message: 'Reading folder contents...' });
 
-            // Step 2: Find all PNG images and CSV file
+            // Step 2: Find all PNG images, Mermaid ERD files, and CSV file
             const files = fs.readdirSync(datamodelFolder);
             const pngFiles = files.filter(f => f.toLowerCase().endsWith('.png'));
+            const mermaidFiles = files.filter(f => {
+                const lower = f.toLowerCase();
+                return lower.endsWith('.mmd') || lower.endsWith('.mermaid');
+            });
             const csvFile = files.find(f => f.toLowerCase() === 'datamodel.csv');
 
-            if (pngFiles.length === 0 && !csvFile) {
-                throw new Error('No PNG files or Datamodel.csv found in folder');
+            if (pngFiles.length === 0 && mermaidFiles.length === 0 && !csvFile) {
+                throw new Error('No PNG files, Mermaid ERD files (.mmd/.mermaid), or Datamodel.csv found in folder');
             }
 
-            logger.info(`Found ${pngFiles.length} PNG files and CSV: ${csvFile ? 'Yes' : 'No'}`);
+            logger.info(`Found ${pngFiles.length} PNG files, ${mermaidFiles.length} Mermaid files, and CSV: ${csvFile ? 'Yes' : 'No'}`);
 
             // Step 3: Parse CSV to get domain structure
             progress.report({ increment: 10, message: 'Parsing Datamodel.csv...' });
             
-            domains = await parseDomains(datamodelFolder, pngFiles, csvFile);
+            domains = await parseDomains(datamodelFolder, pngFiles, mermaidFiles, csvFile);
             
             logger.info(`Identified ${domains.length} domains: ${domains.map(d => d.name).join(', ')}`);
 
@@ -435,15 +440,17 @@ export async function generateDomainDrivenAPIsCommand(): Promise<void> {
                     }
                 }
 
-                // Combine ERD analysis with CSV data
+                // Combine all available data sources (Mermaid ERD, image analysis, CSV)
                 const fullContext = `# ${domain.name} Domain
 
 ## Entities
 ${domain.entities.join(', ')}
 
+${domain.mermaidData ? `## Data Model (Mermaid ERD)\n\`\`\`mermaid\n${domain.mermaidData}\n\`\`\`\n\nNote: The Mermaid ERD above is the authoritative source for entity definitions, field types, and relationships. Use it to derive the OpenAPI schemas, JPA entities, and database schema.` : ''}
+
 ${domain.csvData ? `## Data Model (from CSV)\n${domain.csvData}` : ''}
 
-${erdAnalysis ? `## ERD Analysis\n${erdAnalysis}` : ''}`;
+${erdAnalysis ? `## ERD Analysis (from image)\n${erdAnalysis}` : ''}`;
 
                 progress.report({ 
                     increment: progressIncrement / 3, 
@@ -556,7 +563,7 @@ ${erdAnalysis ? `## ERD Analysis\n${erdAnalysis}` : ''}`;
                                     throw new Error('No workspace folder available');
                                 }
                                 
-                                const extensionPath = vscode.extensions.getExtension('yourpublisher.devex-ai-assistant')?.extensionPath || workspaceFolder.uri.fsPath;
+                                const extensionPath = vscode.extensions.getExtension('CodeSamurai.devex-ai-assistant')?.extensionPath || workspaceFolder.uri.fsPath;
                                 const templateProvider = new TemplateProvider(extensionPath);
                                 
                                 const domainPackage = `${basePackage}.${domain.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
@@ -586,6 +593,9 @@ ${erdAnalysis ? `## ERD Analysis\n${erdAnalysis}` : ''}`;
                                     });
                                 }
 
+                                // Extract schemas for entity/DTO generation
+                                const schemas = openApiSpec.components?.schemas || {};
+
                                 const generator = new SpringBootGenerator(templateProvider);
                                 await generator.generateProject(
                                     {
@@ -598,7 +608,8 @@ ${erdAnalysis ? `## ERD Analysis\n${erdAnalysis}` : ''}`;
                                         springBootVersion: '3.4.1',
                                         buildTool: 'maven'
                                     },
-                                    endpoints
+                                    endpoints,
+                                    schemas
                                 );
 
                                 logger.info(`Generated Spring Boot project for ${domain.name} at: ${projectFolder}`);
@@ -821,7 +832,8 @@ ${generateSpringBootNow ? `- **Spring Boot Projects:** \`${outputRootFolder}/*\`
 
 async function parseDomains(
     folderPath: string, 
-    pngFiles: string[], 
+    pngFiles: string[],
+    mermaidFiles: string[],
     csvFileName?: string
 ): Promise<DomainInfo[]> {
     const domains: Map<string, DomainInfo> = new Map();
@@ -908,6 +920,42 @@ async function parseDomains(
                 entities: []
             });
         }
+    }
+
+    // Map Mermaid ERD files to domains (by filename)
+    for (const mmdFile of mermaidFiles) {
+        const ext = path.extname(mmdFile);
+        const domainName = path.basename(mmdFile, ext)
+            .replace(/[-_]/g, ' ')
+            .split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join('');
+
+        const mermaidContent = fs.readFileSync(path.join(folderPath, mmdFile), 'utf-8');
+
+        // Extract entity names from Mermaid ERD syntax (e.g., "  EntityName {" or "  EntityName ||--o{")
+        const mermaidEntities: string[] = [];
+        const entityPattern = /^\s{2,}(\w+)\s*\{/gm;
+        let match;
+        while ((match = entityPattern.exec(mermaidContent)) !== null) {
+            mermaidEntities.push(match[1]);
+        }
+
+        if (domains.has(domainName)) {
+            const existing = domains.get(domainName)!;
+            existing.mermaidData = mermaidContent;
+            // Merge entities from Mermaid if domain had no entities from CSV
+            if (existing.entities.length === 0 && mermaidEntities.length > 0) {
+                existing.entities = mermaidEntities;
+            }
+        } else {
+            domains.set(domainName, {
+                name: domainName,
+                mermaidData: mermaidContent,
+                entities: mermaidEntities
+            });
+        }
+        logger.info(`Loaded Mermaid ERD for ${domainName}: ${mermaidEntities.length} entities`);
     }
 
     return Array.from(domains.values());

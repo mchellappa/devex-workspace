@@ -79,6 +79,13 @@
         </dependency>
         -->
 
+        <!-- Apache Olingo OData v4 - URI and filter expression parser -->
+        <dependency>
+            <groupId>org.apache.olingo</groupId>
+            <artifactId>odata-server-core</artifactId>
+            <version>4.10.0</version>
+        </dependency>
+
         <!-- Spring Boot Starter Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

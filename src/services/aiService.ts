@@ -614,11 +614,27 @@ Format the review in markdown, use emojis for visual clarity, and be specific wi
 
 **Best Practices:**
 - Versioned API paths (/api/v1/...)
-- Pagination for list endpoints (limit, offset, total)
-- Filtering and sorting query parameters
+- OData v4 query parameters on all GET collection endpoints
 - Standard error response format
 - Request validation (required fields, formats, patterns)
-- Examples for request/response bodies`;
+- Examples for request/response bodies
+
+**OData v4 Query Support (MANDATORY for all GET collection endpoints):**
+Every GET endpoint that returns a list/collection MUST include these query parameters:
+- \`$filter\` (string): OData filter expression (e.g., \`status eq 'ACTIVE' and amount gt 1000\`). Supported operators: eq, ne, gt, ge, lt, le, and, or, not, contains(), startswith(), endswith()
+- \`$orderby\` (string): Comma-separated sort fields with optional asc/desc (e.g., \`createdDate desc, name asc\`)
+- \`$top\` (integer): Maximum number of records to return (default: 50, maximum: 100)
+- \`$skip\` (integer): Number of records to skip for pagination (default: 0)
+- \`$select\` (string): Comma-separated list of fields to return (e.g., \`id,name,status\`)
+- \`$expand\` (string): Comma-separated related entities to include inline (e.g., \`administrators,reports\`)
+- \`$count\` (boolean): When true, include total count in response as \`@odata.count\`
+
+**OData v4 Response Format (MANDATORY for all collection responses):**
+Collection responses MUST use this envelope:
+- \`@odata.context\` (string): Context URL describing the response
+- \`@odata.count\` (integer): Total number of matching records (when \`$count=true\`)
+- \`@odata.nextLink\` (string, nullable): URL for next page of results (null if last page)
+- \`value\` (array): Array of result objects`;
 
         const examplesNote = apiInfo.includeExamples ? 
             '\n- Include realistic examples for all request and response bodies' : 
@@ -670,7 +686,9 @@ ${lldContent}
    - PATCH for partial updates
    - DELETE for removing resources
 6. Include standard error response format
-7. Add pagination support for list endpoints (limit, offset, page)
+7. For all GET collection endpoints, add OData v4 query parameters ($filter, $orderby, $top, $skip, $select, $expand, $count) as defined in the system prompt
+8. Define an ODataResponse schema in components/schemas with @odata.context, @odata.count, @odata.nextLink, and value properties. Use this schema (or entity-specific variants) as the response for all collection endpoints
+9. Add a 400 error response for invalid OData query syntax (e.g., malformed $filter expression)
 
 ${apiInfo.format === 'yaml' ? 
 'Output the complete OpenAPI specification in YAML format. Do not include markdown code fences or explanations, ONLY the YAML content.' :
