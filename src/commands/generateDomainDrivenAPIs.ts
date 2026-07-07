@@ -443,10 +443,22 @@ export async function generateDomainDrivenAPIsCommand(): Promise<void> {
                 // Combine all available data sources (Mermaid ERD, image analysis, CSV)
                 const fullContext = `# ${domain.name} Domain
 
-## Entities
+## Entities (${domain.entities.length} total — EVERY entity below MUST have its own REST resource)
 ${domain.entities.join(', ')}
 
-${domain.mermaidData ? `## Data Model (Mermaid ERD)\n\`\`\`mermaid\n${domain.mermaidData}\n\`\`\`\n\nNote: The Mermaid ERD above is the authoritative source for entity definitions, field types, and relationships. Use it to derive the OpenAPI schemas, JPA entities, and database schema.` : ''}
+${domain.mermaidData ? `## Data Model (Mermaid ERD) — AUTHORITATIVE SOURCE
+\`\`\`mermaid
+${domain.mermaidData}
+\`\`\`
+
+CRITICAL INSTRUCTIONS FOR MERMAID ERD PROCESSING:
+1. The Mermaid ERD above is the AUTHORITATIVE and COMPLETE source for entity definitions, field names, field types, and relationships.
+2. You MUST create a separate REST resource (with full CRUD endpoints) for EVERY entity defined in the ERD — not just the top-level ones.
+3. You MUST include ALL fields/columns from each entity definition in the corresponding OpenAPI schema — do NOT summarize, skip, or omit any fields.
+4. Map Mermaid SQL types to OpenAPI types: bigint->integer(int64), varchar->string, bit->boolean, date->string(date), datetime->string(date-time), timestamp->string(date-time), int->integer(int32), nvarchar->string, TinyInt->integer(int32).
+5. Mark PK fields with readOnly: true. Mark FK fields with their descriptions noting the referenced entity.
+6. Total entity count: ${domain.entities.length}. Your OpenAPI spec MUST have exactly ${domain.entities.length} schemas in components/schemas (one per entity) plus Request/Response variants.
+7. Do NOT group multiple entities into a single resource. Each entity = its own /api/v1/{entity-name} path with GET (list+single), POST, PUT, DELETE.` : ''}
 
 ${domain.csvData ? `## Data Model (from CSV)\n${domain.csvData}` : ''}
 
@@ -933,13 +945,32 @@ async function parseDomains(
 
         const mermaidContent = fs.readFileSync(path.join(folderPath, mmdFile), 'utf-8');
 
-        // Extract entity names from Mermaid ERD syntax (e.g., "  EntityName {" or "  EntityName ||--o{")
-        const mermaidEntities: string[] = [];
-        const entityPattern = /^\s{2,}(\w+)\s*\{/gm;
+        // Extract entity names from Mermaid ERD syntax
+        // Two sources: 1) Entity body definitions like "EntityName {" at any indentation
+        //              2) Relationship lines like "EntityA ||--o{ EntityB : FK"
+        const mermaidEntitySet = new Set<string>();
+
+        // Match entity body definitions: "EntityName {" (with optional leading whitespace)
+        const bodyPattern = /^(\w+)\s*\{/gm;
         let match;
-        while ((match = entityPattern.exec(mermaidContent)) !== null) {
-            mermaidEntities.push(match[1]);
+        while ((match = bodyPattern.exec(mermaidContent)) !== null) {
+            const name = match[1];
+            // Skip Mermaid keywords
+            if (name !== 'erDiagram' && name !== 'classDiagram' && name !== 'graph') {
+                mermaidEntitySet.add(name);
+            }
         }
+
+        // Also extract entity names from relationship lines: "EntityA ||--o{ EntityB : label"
+        const relPattern = /^\s*(\w+)\s+[\|o\{}\<\>]+--[\|o\{}\<\>]+\s+(\w+)\s*:/gm;
+        while ((match = relPattern.exec(mermaidContent)) !== null) {
+            const left = match[1];
+            const right = match[2];
+            if (left !== 'erDiagram') { mermaidEntitySet.add(left); }
+            if (right !== 'erDiagram') { mermaidEntitySet.add(right); }
+        }
+
+        const mermaidEntities = Array.from(mermaidEntitySet).sort();
 
         if (domains.has(domainName)) {
             const existing = domains.get(domainName)!;

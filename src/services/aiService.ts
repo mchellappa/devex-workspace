@@ -661,12 +661,12 @@ ${lldContent}
 **Note:** The LLD content may include HTML tables with API definitions. Parse these tables carefully to extract endpoint details, parameters, and schemas.
 
 **Instructions:**
-1. Analyze the LLD and identify all API endpoints, data models, and business logic
+1. Analyze the LLD and identify ALL entities/data models. If a Mermaid ERD is provided, EVERY entity defined in the ERD MUST become its own REST resource with full CRUD endpoints. Do NOT skip, merge, or summarize entities.
 2. Create a complete OpenAPI 3.0.3 specification with:
    - info section (title, description, version, contact)
    - servers section (placeholder for dev/staging/prod)
-   - paths section (all API endpoints with operations)
-   - components/schemas section (all data models with validation)
+   - paths section (EVERY entity gets its own path: /api/v1/{entity-name} with GET list, GET by ID, POST, PUT, DELETE)
+   - components/schemas section (one schema per entity with ALL fields from the source data model — do not omit any fields)
    - components/responses section (common responses like 400, 401, 404, 500)${apiInfo.includeSecurity ? '\n   - components/securitySchemes section (authentication methods)\n   - security requirements for protected endpoints' : ''}
 3. For each endpoint include:
    - Clear summary and description
@@ -675,10 +675,13 @@ ${lldContent}
    - All possible response codes with schemas
    - Appropriate tags for grouping
 4. For each schema include:
-   - All properties with types and descriptions
-   - Required fields
-   - Validation rules (minLength, maxLength, pattern, minimum, maximum, enum)
+   - ALL properties/fields from the source data model (Mermaid ERD, CSV, or LLD) — do NOT summarize or skip fields
+   - Correct OpenAPI types mapped from source types (bigint->integer/int64, varchar->string, bit->boolean, date->string/date, datetime->string/date-time, timestamp->string/date-time, nvarchar->string)
+   - Required fields (non-nullable fields)
+   - Validation rules (minLength, maxLength from varchar(N), pattern, minimum, maximum, enum)
    - Format specifications (email, date-time, uuid, etc.)
+   - PK fields should be marked readOnly: true
+   - FK fields should include description noting the referenced entity
 5. Use RESTful conventions:
    - GET for retrieving resources
    - POST for creating resources
