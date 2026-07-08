@@ -236,6 +236,14 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.12</version>
+                <configuration>
+                    <excludes>
+                        <!-- Exclude MapStruct-generated mapper implementations -->
+                        <exclude>**/*MapperImpl.class</exclude>
+                        <!-- Exclude Spring Boot application class -->
+                        <exclude>**/*Application.class</exclude>
+                    </excludes>
+                </configuration>
                 <executions>
                     <execution>
                         <id>prepare-agent</id>

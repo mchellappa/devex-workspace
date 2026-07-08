@@ -6,6 +6,7 @@ import {{packageName}}.entity.{{entityName}};
 import {{packageName}}.exception.ResourceNotFoundException;
 import {{packageName}}.mapper.{{entityName}}Mapper;
 import {{packageName}}.repository.{{repositoryName}};
+import {{packageName}}.odata.ODataQueryOptions;
 import {{packageName}}.odata.ODataSpecificationBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.util.Arrays;
 import java.util.List;
@@ -102,6 +104,68 @@ class {{className}} {
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getTotalElements()).isEqualTo(1);
         verify({{camelCase repositoryName}}, times(1)).findAll(pageable);
+    }
+
+    @Test
+    @DisplayName("findAll: OData options with filter → delegates to specification builder and repository")
+    @SuppressWarnings("unchecked")
+    void findAll_withODataFilter_delegatesToSpecAndRepo() {
+        ODataQueryOptions options = new ODataQueryOptions();
+        options.setFilter("status eq 'ACTIVE'");
+        options.setTop(10);
+        options.setSkip(0);
+
+        Specification<{{entityName}}> mockSpec = mock(Specification.class);
+        Pageable pageable = options.toPageable();
+        List<{{entityName}}> entities = Arrays.asList(testEntity);
+        Page<{{entityName}}> entityPage = new PageImpl<>(entities, pageable, entities.size());
+
+        when(specificationBuilder.buildSpecification("status eq 'ACTIVE'")).thenReturn(mockSpec);
+        when({{camelCase repositoryName}}.findAll(org.mockito.ArgumentMatchers.<Specification<{{entityName}}>>any(), 
+                org.mockito.ArgumentMatchers.<Pageable>any())).thenReturn(entityPage);
+        when(mapper.toResponse(any({{entityName}}.class))).thenReturn(testResponse);
+
+        Page<{{entityName}}Response> result = {{camelCase serviceName}}.findAll(options);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getContent()).hasSize(1);
+        verify(specificationBuilder).buildSpecification("status eq 'ACTIVE'");
+        verify({{camelCase repositoryName}}).findAll(org.mockito.ArgumentMatchers.<Specification<{{entityName}}>>any(), 
+                org.mockito.ArgumentMatchers.<Pageable>any());
+    }
+
+    @Test
+    @DisplayName("findAll: OData options without filter → passes null spec to repository")
+    @SuppressWarnings("unchecked")
+    void findAll_withoutFilter_passesNullSpec() {
+        ODataQueryOptions options = new ODataQueryOptions();
+        options.setTop(25);
+        options.setSkip(0);
+
+        Pageable pageable = options.toPageable();
+        List<{{entityName}}> entities = Arrays.asList(testEntity);
+        Page<{{entityName}}> entityPage = new PageImpl<>(entities, pageable, entities.size());
+
+        when({{camelCase repositoryName}}.findAll(org.mockito.ArgumentMatchers.<Specification<{{entityName}}>>isNull(), 
+                org.mockito.ArgumentMatchers.<Pageable>any())).thenReturn(entityPage);
+        when(mapper.toResponse(any({{entityName}}.class))).thenReturn(testResponse);
+
+        Page<{{entityName}}Response> result = {{camelCase serviceName}}.findAll(options);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getContent()).hasSize(1);
+        verify(specificationBuilder, never()).buildSpecification(anyString());
+    }
+
+    @Test
+    @DisplayName("findAll: null OData options → throws IllegalArgumentException")
+    void findAll_nullOptions_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> {{camelCase serviceName}}.findAll((ODataQueryOptions) null))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verify({{camelCase repositoryName}}, never()).findAll(
+                org.mockito.ArgumentMatchers.<Specification<{{entityName}}>>any(), 
+                org.mockito.ArgumentMatchers.<Pageable>any());
     }
 
     @Test

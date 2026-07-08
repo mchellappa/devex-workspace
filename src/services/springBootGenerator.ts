@@ -165,6 +165,10 @@ export class SpringBootGenerator {
             logger.info('Generating .gitignore...');
             await this.generateGitignore(projectPath);
 
+            // Generate lombok.config for JaCoCo coverage exclusion
+            logger.info('Generating lombok.config...');
+            await this.generateLombokConfig(projectPath);
+
             // Copy deployment templates
             logger.info('Copying deployment templates...');
             await this.templateProvider.copyDeploymentTemplates(projectPath);
@@ -1046,6 +1050,9 @@ export class SpringBootGenerator {
         const filePath = path.join(projectPath, 'src', 'test', 'java', packagePath, `${className}.java`);
         await fs.promises.writeFile(filePath, content, 'utf-8');
         
+        // Generate OData test classes (package-level, one per project)
+        await this.generateODataTests(projectPath, config);
+
         // Generate Controller and Service tests for each resource
         for (const resource of resources) {
             const schema = this.findSchemaForResource(resource, schemas);
@@ -1071,6 +1078,53 @@ export class SpringBootGenerator {
     private async generateGitignore(projectPath: string): Promise<void> {
         const template = await this.templateProvider.readSpringBootTemplate('.gitignore.template');
         await fs.promises.writeFile(path.join(projectPath, '.gitignore'), template, 'utf-8');
+    }
+
+    private async generateLombokConfig(projectPath: string): Promise<void> {
+        try {
+            const template = await this.templateProvider.readSpringBootTemplate('lombok.config.template');
+            await fs.promises.writeFile(path.join(projectPath, 'lombok.config'), template, 'utf-8');
+            logger.info('Generated lombok.config for JaCoCo coverage exclusion');
+        } catch (error: any) {
+            // Non-critical - project works without it, just coverage numbers include Lombok code
+            logger.warn(`Could not generate lombok.config: ${error.message}`);
+        }
+    }
+
+    /**
+     * Generates OData unit test classes in the test odata package.
+     * These are package-level tests (one per project, not per entity):
+     * - ODataQueryParserTest: Tests parsing of raw query params into ODataQueryOptions
+     * - ODataSpecificationBuilderTest: Tests translation of $filter into JPA Specifications
+     */
+    private async generateODataTests(projectPath: string, config: SpringBootProjectConfig): Promise<void> {
+        const packagePath = config.packageName.replace(/\./g, '/');
+        const odataTestDir = path.join(projectPath, 'src', 'test', 'java', packagePath, 'odata');
+        await fs.promises.mkdir(odataTestDir, { recursive: true });
+
+        const odataTestTemplates = [
+            'ODataQueryParserTest.java.template',
+            'ODataSpecificationBuilderTest.java.template'
+        ];
+
+        const context = {
+            packageName: config.packageName
+        };
+
+        for (const templateName of odataTestTemplates) {
+            try {
+                const template = await this.templateProvider.readSpringBootTemplate(templateName);
+                const compiled = Handlebars.compile(template);
+                const content = compiled(context);
+                const fileName = templateName.replace('.template', '');
+                const filePath = path.join(odataTestDir, fileName);
+                await fs.promises.writeFile(filePath, content, 'utf-8');
+                logger.info(`Generated OData test: ${fileName}`);
+            } catch (error: any) {
+                // Non-critical - tests are nice-to-have, don't fail the whole generation
+                logger.warn(`Could not generate OData test ${templateName}: ${error.message}`);
+            }
+        }
     }
 
     private async generateControllerTest(projectPath: string, config: SpringBootProjectConfig, resource: string, schema?: any): Promise<void> {
