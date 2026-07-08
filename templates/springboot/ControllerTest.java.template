@@ -4,6 +4,8 @@ import {{packageName}}.dto.{{entityName}}Request;
 import {{packageName}}.dto.{{entityName}}Response;
 import {{packageName}}.exception.ResourceNotFoundException;
 import {{packageName}}.service.{{serviceName}};
+import {{packageName}}.odata.ODataQueryParser;
+import {{packageName}}.odata.ODataQueryOptions;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,7 +25,6 @@ import java.util.List;
 import java.util.Optional;
 
 import org.mockito.ArgumentMatchers;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -50,12 +51,19 @@ class {{className}} {
     @MockBean
     private {{serviceName}} {{camelCase serviceName}};
 
+    @MockBean
+    private ODataQueryParser odataQueryParser;
+
     private {{entityName}}Request testRequest;
     private {{entityName}}Response testResponse;
     private List<{{entityName}}Response> testResponseList;
 
     @BeforeEach
     void setUp() {
+        // Configure ODataQueryParser mock to return default options for any input
+        ODataQueryOptions defaultOptions = new ODataQueryOptions();
+        when(odataQueryParser.parse(ArgumentMatchers.anyMap())).thenReturn(defaultOptions);
+
         testRequest = {{entityName}}Request.builder()
                 {{#each fields}}
                 .{{name}}({{#if (eq type "String")}}"test{{pascalCase name}}"{{else if (eq type "Integer")}}1{{else if (eq type "Long")}}1L{{else if (eq type "Double")}}1.0{{else if (eq type "BigDecimal")}}new java.math.BigDecimal("1.0"){{else if (eq type "Boolean")}}true{{else if (startsWith type "List<")}}java.util.Collections.emptyList(){{else if (startsWith type "Set<")}}java.util.Collections.emptySet(){{else if (startsWith type "Map<")}}java.util.Collections.emptyMap(){{else if (startsWith type "LocalDateTime")}}java.time.LocalDateTime.now(){{else if (startsWith type "LocalDate")}}java.time.LocalDate.now(){{else}}null{{/if}})
@@ -76,33 +84,34 @@ class {{className}} {
     }
 
     @Test
-    @DisplayName("getAll: no params → returns all {{resourceName}}")
+    @DisplayName("getAll: no params → returns OData response with all {{resourceName}}")
     void getAll_returnsAllEntities() throws Exception {
-        when({{camelCase serviceName}}.getAll()).thenReturn(testResponseList);
+        Page<{{entityName}}Response> page = new PageImpl<>(testResponseList, PageRequest.of(0, 50), testResponseList.size());
+        when({{camelCase serviceName}}.findAll(ArgumentMatchers.any(ODataQueryOptions.class))).thenReturn(page);
 
         mockMvc.perform(get("/{{resourceName}}"))
                 .andExpect(status().isOk())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$", hasSize(2)))
-                .andExpect(jsonPath("$[0].id", is(1)));
+                .andExpect(jsonPath("$.value", hasSize(2)))
+                .andExpect(jsonPath("$.value[0].id", is(1)));
 
-        verify({{camelCase serviceName}}, times(1)).getAll();
+        verify({{camelCase serviceName}}, times(1)).findAll(ArgumentMatchers.any(ODataQueryOptions.class));
     }
 
     @Test
-    @DisplayName("getAll: with page params → returns paginated results")
-    void getAll_withPageParams_returnsPaginatedResults() throws Exception {
+    @DisplayName("getAll: with OData params → returns filtered/paginated results")
+    void getAll_withODataParams_returnsFilteredResults() throws Exception {
         Page<{{entityName}}Response> page = new PageImpl<>(testResponseList, PageRequest.of(0, 10), testResponseList.size());
-        when({{camelCase serviceName}}.getAll(ArgumentMatchers.any())).thenReturn(page);
+        when({{camelCase serviceName}}.findAll(ArgumentMatchers.any(ODataQueryOptions.class))).thenReturn(page);
 
         mockMvc.perform(get("/{{resourceName}}")
-                        .param("page", "0")
-                        .param("size", "10"))
+                        .param("$top", "10")
+                        .param("$skip", "0")
+                        .param("$count", "true"))
                 .andExpect(status().isOk())
-                .andExpect(header().exists("X-Total-Count"))
-                .andExpect(jsonPath("$", hasSize(2)));
+                .andExpect(jsonPath("$.value", hasSize(2)));
 
-        verify({{camelCase serviceName}}, times(1)).getAll(ArgumentMatchers.any());
+        verify(odataQueryParser, times(1)).parse(ArgumentMatchers.anyMap());
+        verify({{camelCase serviceName}}, times(1)).findAll(ArgumentMatchers.any(ODataQueryOptions.class));
     }
 
     @Test
@@ -112,7 +121,6 @@ class {{className}} {
 
         mockMvc.perform(get("/{{resourceName}}/1"))
                 .andExpect(status().isOk())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.id", is(1)));
 
         verify({{camelCase serviceName}}, times(1)).getById(1L);
