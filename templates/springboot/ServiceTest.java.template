@@ -120,7 +120,8 @@ class {{className}} {
         List<{{entityName}}> entities = Arrays.asList(testEntity);
         Page<{{entityName}}> entityPage = new PageImpl<>(entities, pageable, entities.size());
 
-        when(specificationBuilder.buildSpecification("status eq 'ACTIVE'")).thenReturn(mockSpec);
+        // Use doReturn to avoid generic type mismatch between Specification<Object> and Specification<Entity>
+        doReturn(mockSpec).when(specificationBuilder).buildSpecification("status eq 'ACTIVE'");
         when({{camelCase repositoryName}}.findAll(org.mockito.ArgumentMatchers.<Specification<{{entityName}}>>any(), 
                 org.mockito.ArgumentMatchers.<Pageable>any())).thenReturn(entityPage);
         when(mapper.toResponse(any({{entityName}}.class))).thenReturn(testResponse);
