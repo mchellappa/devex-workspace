@@ -331,6 +331,11 @@ export class SpringBootGenerator {
         }
         logger.info(`Resource name map: ${JSON.stringify(Object.fromEntries(this.resourceNameMap))}`);
 
+        // Populate entityNames early so calculateImports can resolve entity vs DTO imports
+        // This MUST happen before generateModelClasses is called below
+        this.entityNames = new Set(Object.keys(resourceEndpoints).map(r => this.toPascalCase(r)));
+        logger.info(`Pre-populated ${this.entityNames.size} entity names for import resolution: ${Array.from(this.entityNames).join(', ')}`);
+
         // Build relationship lookups per entity
         const entityRelationships: Record<string, {
             manyToOne: RelationshipInfo[];
