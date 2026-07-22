@@ -111,6 +111,8 @@ export class SpringBootGenerator {
     private entityNames: Set<string> = new Set<string>();
     /** Maps lowercase Mermaid entity names to the actual resource strings used by the generator */
     private resourceNameMap: Map<string, string> = new Map();
+    /** Relationship lookups per entity, populated during controller generation for use by test generation */
+    private entityRelationships: Record<string, { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] }> = {};
 
     constructor(templateProvider: TemplateProvider) {
         this.templateProvider = templateProvider;
@@ -355,6 +357,8 @@ export class SpringBootGenerator {
                 entityRelationships[source].oneToMany.push(rel);
             }
         }
+        // Store for use by test generation
+        this.entityRelationships = entityRelationships;
 
         // Generate controller for each resource
         const resources = Object.keys(resourceEndpoints);
@@ -1227,7 +1231,12 @@ export class SpringBootGenerator {
         // Generate Controller and Service tests for each resource
         for (const resource of resources) {
             const schema = this.findSchemaForResource(resource, schemas);
-            await this.generateControllerTest(projectPath, config, resource, schema);
+            const entityName = this.toPascalCase(resource);
+            const singularName = this.toPascalCase(this.toSingular(resource.toLowerCase()));
+            const rels = this.entityRelationships[entityName] 
+                || this.entityRelationships[singularName] 
+                || { manyToOne: [], oneToMany: [] };
+            await this.generateControllerTest(projectPath, config, resource, schema, rels);
             await this.generateServiceTest(projectPath, config, resource, schema);
         }
     }
@@ -1298,7 +1307,13 @@ export class SpringBootGenerator {
         }
     }
 
-    private async generateControllerTest(projectPath: string, config: SpringBootProjectConfig, resource: string, schema?: any): Promise<void> {
+    private async generateControllerTest(
+        projectPath: string, 
+        config: SpringBootProjectConfig, 
+        resource: string, 
+        schema?: any,
+        rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] }
+    ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const entityName = this.toPascalCase(resource);
         const className = entityName + 'ControllerTest';
@@ -1321,6 +1336,23 @@ export class SpringBootGenerator {
                 fields = [{ name: 'name', type: 'String' }, { name: 'description', type: 'String' }];
             }
         }
+
+        // Build child service list (deduplicated) for @MockBean declarations in tests
+        const seenChildServicesTest = new Set<string>();
+        const childServices = rels.oneToMany
+            .map(r => {
+                const resolvedName = this.resolveEntityToClassName(r.targetEntity);
+                return {
+                    serviceName: resolvedName + 'Service'
+                };
+            })
+            .filter(cs => {
+                if (seenChildServicesTest.has(cs.serviceName)) {
+                    return false;
+                }
+                seenChildServicesTest.add(cs.serviceName);
+                return true;
+            });
         
         const template = await this.templateProvider.readSpringBootTemplate('ControllerTest.java.template');
         const compiled = Handlebars.compile(template);
@@ -1331,7 +1363,8 @@ export class SpringBootGenerator {
             entityName: entityName,
             resourceName: resource,
             serviceName: entityName + 'Service',
-            fields
+            fields,
+            childServices: childServices.length > 0 ? childServices : undefined
         });
 
         const testDir = path.join(projectPath, 'src', 'test', 'java', packagePath, 'controller');

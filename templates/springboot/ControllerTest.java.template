@@ -4,6 +4,11 @@ import {{packageName}}.dto.{{entityName}}Request;
 import {{packageName}}.dto.{{entityName}}Response;
 import {{packageName}}.exception.ResourceNotFoundException;
 import {{packageName}}.service.{{serviceName}};
+{{#if childServices}}
+{{#each childServices}}
+import {{../packageName}}.service.{{serviceName}};
+{{/each}}
+{{/if}}
 import {{packageName}}.odata.ODataQueryParser;
 import {{packageName}}.odata.ODataQueryOptions;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -51,6 +56,13 @@ class {{className}} {
     @MockBean
     private {{serviceName}} {{camelCase serviceName}};
 
+{{#if childServices}}
+{{#each childServices}}
+    @MockBean
+    private {{serviceName}} {{camelCase serviceName}};
+
+{{/each}}
+{{/if}}
     @MockBean
     private ODataQueryParser odataQueryParser;
 
