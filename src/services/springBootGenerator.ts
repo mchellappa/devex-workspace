@@ -1473,12 +1473,13 @@ export class SpringBootGenerator {
 
         const enriched = fields.map(field => {
             // Check if this field is a FK reference field
+            // Normalize both sides by stripping underscores/hyphens so multi-word entities match:
+            // e.g., "PartyRole" -> "partyrole" matches "party_role_id" -> "partyroleid"
             const matchingManyToOne = rels.manyToOne.find(r => {
-                const targetLower = r.targetEntity.toLowerCase();
-                const fieldLower = field.name.toLowerCase();
-                return fieldLower === targetLower + '_id'
-                    || fieldLower === targetLower + 'id'
-                    || fieldLower === targetLower;
+                const targetNorm = r.targetEntity.toLowerCase().replace(/[-_]/g, '');
+                const fieldNorm = field.name.toLowerCase().replace(/[-_]/g, '');
+                return fieldNorm === targetNorm + 'id'
+                    || fieldNorm === targetNorm;
             });
 
             if (matchingManyToOne) {
