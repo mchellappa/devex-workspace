@@ -12,6 +12,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 /**
  * Repository interface for {{entityName}} entity data access operations.
  * <p>
@@ -191,4 +194,27 @@ public interface {{className}} extends JpaRepository<{{entityName}}, Long>,
      */
     // @Query("SELECT new {{packageName}}.dto.{{entityName}}SummaryDto(e.id, e.name, e.status) FROM {{entityName}} e")
     // List<{{entityName}}SummaryDto> findAllSummaries();
+
+    // ==================== Parent Relationship Queries ====================
+
+    {{#if parentRelationships}}
+    {{#each parentRelationships}}
+    /**
+     * Find all {{../entityName}} entities belonging to a specific {{parentEntity}}.
+     *
+     * @param {{camelCase parentFieldName}}Id the ID of the parent {{parentEntity}}
+     * @return list of {{../entityName}} entities for the given parent
+     */
+    List<{{../entityName}}> findBy{{parentFieldName}}Id(Long {{camelCase parentFieldName}}Id);
+
+    /**
+     * Find all {{../entityName}} entities belonging to a specific {{parentEntity}} with pagination.
+     *
+     * @param {{camelCase parentFieldName}}Id the ID of the parent {{parentEntity}}
+     * @param pageable pagination parameters
+     * @return page of {{../entityName}} entities for the given parent
+     */
+    Page<{{../entityName}}> findBy{{parentFieldName}}Id(Long {{camelCase parentFieldName}}Id, Pageable pageable);
+    {{/each}}
+    {{/if}}
 }

@@ -608,7 +608,7 @@ Format the review in markdown, use emojis for visual clarity, and be specific wi
 - Proper status codes (200, 201, 400, 401, 403, 404, 500, etc.)
 - Comprehensive schema definitions with validation rules
 - Clear descriptions for all endpoints, parameters, and responses
-- Consistent naming conventions (kebab-case for paths, camelCase for properties)
+- Naming conventions: kebab-case for URL path segments; snake_case for ALL schema properties, request/response body fields, query parameter names, and entity attributes. Java field names remain camelCase internally but MUST be annotated with @JsonProperty using the snake_case equivalent name.
 - Include common headers and error responses
 - Security schemes when appropriate (Bearer, OAuth2, API Key)
 
@@ -619,10 +619,45 @@ Format the review in markdown, use emojis for visual clarity, and be specific wi
 - Request validation (required fields, formats, patterns)
 - Examples for request/response bodies
 
+**Entity Relationship Handling:**
+- FK fields (foreign keys) MUST be typed as integer/int64 and include a short description noting the referenced entity (e.g., description: FK to Customer)
+- Do NOT generate inline $ref objects for relationships — keep FK fields as simple integer fields
+- Do NOT generate nested collection endpoints — the code generator handles these automatically
+
+**Standard Request Headers (MANDATORY on ALL operations):**
+Every API operation (GET, POST, PUT, PATCH, DELETE) MUST include the following header parameter:
+- \`X-B3-Trace-Id\` (string, required): Distributed tracing identifier for request correlation across services.
+
+**Standard Response Headers (MANDATORY on ALL responses — 2xx, 4xx, 5xx):**
+Define the following in components/headers and $ref them in every response:
+- \`Cache-Control\`: Directives for caching. Use \`no-cache\` for dynamic data. Use \`public, max-age=<value>\` where caching is permitted.
+- \`X-B3-Trace-Id\`: Distributed tracing identifier echoed back to caller.
+- \`Manulife-Api-Version\`: API version in YYYY-MM-DD format.
+
+**PII Data Handling (MANDATORY):**
+Endpoints that retrieve Personally Identifiable Information — identified by field names containing: ssn, sin, date_of_birth, dob, email, phone, address, tax_id, national_id, passport, driver_license — MUST be generated as POST endpoints instead of GET. This prevents PII exposure in URLs, browser history, logs, and proxies. The filter criteria should be accepted in the request body.
+
+**Standard Error Response Format (MANDATORY for all 4xx and 5xx responses):**
+All error responses MUST use this JSON API–style structure:
+\`\`\`json
+{
+  "errors": [
+    {
+      "id": "<uuid-v4>",
+      "status": "400",
+      "title": "Bad Request",
+      "code": "VALIDATION_ERROR",
+      "detail": "First name is required"
+    }
+  ]
+}
+\`\`\`
+Define an \`ErrorResponse\` schema in components/schemas with an \`errors\` array property. Each error object must have: id (string/uuid), status (string), title (string), code (string), detail (string).
+
 **OData v4 Query Support (MANDATORY for all GET collection endpoints):**
 Every GET endpoint that returns a list/collection MUST include these query parameters:
 - \`$filter\` (string): OData filter expression (e.g., \`status eq 'ACTIVE' and amount gt 1000\`). Supported operators: eq, ne, gt, ge, lt, le, and, or, not, contains(), startswith(), endswith()
-- \`$orderby\` (string): Comma-separated sort fields with optional asc/desc (e.g., \`createdDate desc, name asc\`)
+- \`$orderby\` (string): Comma-separated sort fields with optional asc/desc (e.g., \`created_date desc, name asc\`)
 - \`$top\` (integer): Maximum number of records to return (default: 50, maximum: 100)
 - \`$skip\` (integer): Number of records to skip for pagination (default: 0)
 - \`$select\` (string): Comma-separated list of fields to return (e.g., \`id,name,status\`)
@@ -662,33 +697,36 @@ ${lldContent}
 
 **Instructions:**
 1. Analyze the LLD and identify ALL entities/data models. If a Mermaid ERD is provided, EVERY entity defined in the ERD MUST become its own REST resource with full CRUD endpoints. Do NOT skip, merge, or summarize entities.
+  - When the LLD includes an explicit Mermaid entity list, you MUST preserve those entity names exactly in components/schemas (for example: Party -> schema name Party, PartyRole -> schema name PartyRole).
 2. Create a complete OpenAPI 3.0.3 specification with:
    - info section (title, description, version, contact)
    - servers section (placeholder for dev/staging/prod)
    - paths section (EVERY entity gets its own path: /api/v1/{entity-name} with GET list, GET by ID, POST, PUT, DELETE)
    - components/schemas section (one schema per entity with ALL fields from the source data model — do not omit any fields)
-   - components/responses section (common responses like 400, 401, 404, 500)${apiInfo.includeSecurity ? '\n   - components/securitySchemes section (authentication methods)\n   - security requirements for protected endpoints' : ''}
+   - components/headers section (Cache-Control, X-B3-Trace-Id, Manulife-Api-Version) as defined in the system prompt
+   - components/responses section (common responses like 400, 401, 404, 500) — EVERY response MUST include $ref to all three standard headers${apiInfo.includeSecurity ? '\n   - components/securitySchemes section (authentication methods)\n   - security requirements for protected endpoints' : ''}
 3. For each endpoint include:
    - Clear summary and description
-   - All parameters (path, query, header)
+   - All parameters (path, query, header) — EVERY operation MUST include the X-B3-Trace-Id required header parameter as defined in the system prompt
    - Request body schema with validation rules
-   - All possible response codes with schemas
+   - All possible response codes with schemas — EVERY response MUST $ref the standard response headers
    - Appropriate tags for grouping
 4. For each schema include:
    - ALL properties/fields from the source data model (Mermaid ERD, CSV, or LLD) — do NOT summarize or skip fields
+   - ALL property names MUST use snake_case (e.g., party_type_code, created_date, rk_customer_id)
    - Correct OpenAPI types mapped from source types (bigint->integer/int64, varchar->string, bit->boolean, date->string/date, datetime->string/date-time, timestamp->string/date-time, nvarchar->string)
    - Required fields (non-nullable fields)
    - Validation rules (minLength, maxLength from varchar(N), pattern, minimum, maximum, enum)
    - Format specifications (email, date-time, uuid, etc.)
    - PK fields should be marked readOnly: true
    - FK fields should include description noting the referenced entity
-5. Use RESTful conventions:
-   - GET for retrieving resources
-   - POST for creating resources
+5. Use RESTful conventions with PII handling:
+   - GET for retrieving non-PII resources
+   - POST for creating resources AND for retrieving resources that contain PII fields (ssn, sin, date_of_birth, dob, email, phone, address, tax_id, national_id, passport, driver_license) — accept filter criteria in the request body
    - PUT for full updates
    - PATCH for partial updates
    - DELETE for removing resources
-6. Include standard error response format
+6. Define an ErrorResponse schema in components/schemas as described in the system prompt. Use this schema for ALL 4xx and 5xx error responses throughout the spec.
 7. For all GET collection endpoints, add OData v4 query parameters ($filter, $orderby, $top, $skip, $select, $expand, $count) as defined in the system prompt
 8. Define an ODataResponse schema in components/schemas with @odata.context, @odata.count, @odata.nextLink, and value properties. Use this schema (or entity-specific variants) as the response for all collection endpoints
 9. Add a 400 error response for invalid OData query syntax (e.g., malformed $filter expression)

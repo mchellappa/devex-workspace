@@ -3,11 +3,18 @@ package {{packageName}}.controller;
 import {{packageName}}.dto.{{entityName}}Request;
 import {{packageName}}.dto.{{entityName}}Response;
 import {{packageName}}.service.{{serviceName}};
+{{#if childEndpoints}}
+{{#each childEndpoints}}
+import {{packageName}}.service.{{childServiceName}};
+{{/each}}
+{{/if}}
 import {{packageName}}.odata.ODataQueryParser;
 import {{packageName}}.odata.ODataQueryOptions;
 import {{packageName}}.odata.ODataResponse;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.Assert;
@@ -25,6 +32,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * REST controller for managing {{entityName}} resources.
@@ -51,9 +59,32 @@ import java.util.Map;
 public class {{className}} {
 
     private static final Logger log = LoggerFactory.getLogger({{className}}.class);
+
+    @Value("${spring.application.version:1.0.0}")
+    private String applicationVersion;
     
     private final {{serviceName}} {{camelCase serviceName}};
     private final ODataQueryParser odataQueryParser;
+    {{#if childEndpoints}}
+    {{#each childEndpoints}}
+    private final {{childServiceName}} {{camelCase childServiceName}};
+    {{/each}}
+    {{/if}}
+
+    /**
+     * Builds standard response headers for all API responses.
+     * Sets Cache-Control, X-B3-Trace-Id (echoed from request), and Manulife-Api-Version.
+     *
+     * @param traceId the X-B3-Trace-Id from the incoming request
+     * @return populated HttpHeaders
+     */
+    private HttpHeaders buildResponseHeaders(String traceId) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Cache-Control", "no-cache");
+        headers.set("X-B3-Trace-Id", traceId != null ? traceId : UUID.randomUUID().toString());
+        headers.set("Manulife-Api-Version", applicationVersion);
+        return headers;
+    }
 
     /**
      * Constructs a new {{className}} with required dependencies.
@@ -62,11 +93,17 @@ public class {{className}} {
      * @param odataQueryParser the OData query parameter parser
      */
     @Autowired
-    public {{className}}({{serviceName}} {{camelCase serviceName}}, ODataQueryParser odataQueryParser) {
+    public {{className}}({{serviceName}} {{camelCase serviceName}}, ODataQueryParser odataQueryParser{{#if childEndpoints}}{{#each childEndpoints}}, {{childServiceName}} {{camelCase childServiceName}}{{/each}}{{/if}}) {
         Assert.notNull({{camelCase serviceName}}, "Service must not be null");
         Assert.notNull(odataQueryParser, "ODataQueryParser must not be null");
         this.{{camelCase serviceName}} = {{camelCase serviceName}};
         this.odataQueryParser = odataQueryParser;
+        {{#if childEndpoints}}
+        {{#each childEndpoints}}
+        Assert.notNull({{camelCase childServiceName}}, "{{childServiceName}} must not be null");
+        this.{{camelCase childServiceName}} = {{camelCase childServiceName}};
+        {{/each}}
+        {{/if}}
     }
 
     /**
@@ -111,6 +148,7 @@ public class {{className}} {
         @ApiResponse(responseCode = "500", description = "Internal server error")
     })
     public ResponseEntity<ODataResponse<{{entityName}}Response>> getAll(
+            @RequestHeader(value = "X-B3-Trace-Id", required = false) String traceId,
             @RequestParam Map<String, String> params
     ) {
         log.debug("GET /{{resourceName}} with OData params: {}", params);
@@ -134,9 +172,11 @@ public class {{className}} {
         );
 
         log.debug("Retrieved {} of {} {{resourceName}}", resultPage.getNumberOfElements(), resultPage.getTotalElements());
+        HttpHeaders headers = buildResponseHeaders(traceId);
+        headers.set("OData-Version", "4.0");
+        headers.set("Content-Type", "application/json;odata.metadata=minimal;charset=utf-8");
         return ResponseEntity.ok()
-                .header("OData-Version", "4.0")
-                .header("Content-Type", "application/json;odata.metadata=minimal;charset=utf-8")
+                .headers(headers)
                 .body(response);
     }
 
@@ -161,15 +201,19 @@ public class {{className}} {
         @ApiResponse(responseCode = "400", description = "Invalid ID format"),
         @ApiResponse(responseCode = "500", description = "Internal server error")
     })
-    public ResponseEntity<{{entityName}}Response> getById(@PathVariable Long id) {
+    public ResponseEntity<{{entityName}}Response> getById(
+            @RequestHeader(value = "X-B3-Trace-Id", required = false) String traceId,
+            @PathVariable Long id) {
         log.debug("GET /{{resourceName}}/{}", id);
+        HttpHeaders stdHeaders = buildResponseHeaders(traceId);
         return {{camelCase serviceName}}.getById(id)
                 .map(response -> {
                     log.debug("Found {{resourceName}} with id: {}", id);
-                    return ResponseEntity.ok()
-                            .header("OData-Version", "4.0")
-                            .header("Content-Type", "application/json;odata.metadata=minimal;charset=utf-8")
-                            .body(response);
+                    HttpHeaders headers = new HttpHeaders();
+                    headers.addAll(stdHeaders);
+                    headers.set("OData-Version", "4.0");
+                    headers.set("Content-Type", "application/json;odata.metadata=minimal;charset=utf-8");
+                    return ResponseEntity.ok().headers(headers).body(response);
                 })
                 .orElseGet(() -> {
                     log.debug("{{entityName}} not found with id: {}", id);
@@ -202,11 +246,15 @@ public class {{className}} {
         @ApiResponse(responseCode = "409", description = "Resource conflict (e.g., duplicate unique field)"),
         @ApiResponse(responseCode = "500", description = "Internal server error")
     })
-    public ResponseEntity<{{entityName}}Response> create(@Valid @RequestBody {{entityName}}Request request) {
+    public ResponseEntity<{{entityName}}Response> create(
+            @RequestHeader(value = "X-B3-Trace-Id", required = false) String traceId,
+            @Valid @RequestBody {{entityName}}Request request) {
         log.info("POST /{{resourceName}} - creating new {{resourceName}}");
         {{entityName}}Response created = {{camelCase serviceName}}.create(request);
         log.info("Successfully created {{resourceName}}");
-        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .headers(buildResponseHeaders(traceId))
+                .body(created);
     }
 
     /**
@@ -237,13 +285,16 @@ public class {{className}} {
         @ApiResponse(responseCode = "500", description = "Internal server error")
     })
     public ResponseEntity<{{entityName}}Response> update(
+            @RequestHeader(value = "X-B3-Trace-Id", required = false) String traceId,
             @PathVariable Long id,
             @Valid @RequestBody {{entityName}}Request request
     ) {
         log.info("PUT /{{resourceName}}/{} - updating {{resourceName}}", id);
         {{entityName}}Response updated = {{camelCase serviceName}}.update(id, request);
         log.info("Successfully updated {{resourceName}} with id: {}", id);
-        return ResponseEntity.ok(updated);
+        return ResponseEntity.ok()
+                .headers(buildResponseHeaders(traceId))
+                .body(updated);
     }
 
     /**
@@ -267,10 +318,47 @@ public class {{className}} {
         @ApiResponse(responseCode = "400", description = "Invalid ID format"),
         @ApiResponse(responseCode = "500", description = "Internal server error")
     })
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    public ResponseEntity<Void> delete(
+            @RequestHeader(value = "X-B3-Trace-Id", required = false) String traceId,
+            @PathVariable Long id) {
         log.info("DELETE /{{resourceName}}/{}", id);
         {{camelCase serviceName}}.delete(id);
         log.info("Successfully deleted {{resourceName}} with id: {}", id);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.noContent()
+                .headers(buildResponseHeaders(traceId))
+                .build();
     }
+
+    {{#if childEndpoints}}
+    {{#each childEndpoints}}
+    /**
+     * Retrieves {{childResourceName}} belonging to this {{../entityName}}.
+     * Nested endpoint: GET /{{../resourceName}}/{id}/{{childResourceName}}
+     *
+     * @param id the ID of the parent {{../entityName}}
+     * @return list of {{childEntityName}} entities belonging to the parent
+     */
+    @GetMapping("/{id}/{{childResourceName}}")
+    @Operation(
+        summary = "Get {{childResourceName}} for a specific {{../entityName}}",
+        description = "Retrieve all {{childResourceName}} belonging to {{../entityName}} with the given ID"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Successfully retrieved {{childResourceName}}"),
+        @ApiResponse(responseCode = "404", description = "{{../entityName}} not found")
+    })
+    public ResponseEntity<?> get{{childEntityName}}ByParentId(
+            @RequestHeader(value = "X-B3-Trace-Id", required = false) String traceId,
+            @PathVariable Long id) {
+        log.debug("GET /{{../resourceName}}/{}/{{childResourceName}}", id);
+        // Verify parent exists
+        if ({{camelCase ../serviceName}}.getById(id).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        var children = {{camelCase childServiceName}}.findBy{{../entityName}}Id(id);
+        HttpHeaders headers = buildResponseHeaders(traceId);
+        return ResponseEntity.ok().headers(headers).body(children);
+    }
+    {{/each}}
+    {{/if}}
 }

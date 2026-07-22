@@ -61,6 +61,14 @@ Handlebars.registerHelper('startsWith', function(str: any, prefix: any) {
     return str.startsWith(prefix);
 });
 
+// Helper to join an array with a separator (used in RequestDto for enum pattern generation)
+Handlebars.registerHelper('join', function(arr: any, separator: string) {
+    if (!Array.isArray(arr)) {
+        return '';
+    }
+    return arr.join(typeof separator === 'string' ? separator : ',');
+});
+
 // Helper for proper HTTP method annotation capitalization
 // GET -> GetMapping, POST -> PostMapping, etc.
 Handlebars.registerHelper('methodMapping', function(method: string) {
@@ -91,6 +99,13 @@ export interface OpenAPIEndpoint {
     responses: any;
 }
 
+export interface RelationshipInfo {
+    sourceEntity: string;
+    targetEntity: string;
+    type: 'OneToMany' | 'ManyToOne' | 'OneToOne' | 'ManyToMany';
+    label: string;
+}
+
 export class SpringBootGenerator {
     private templateProvider: TemplateProvider;
     private entityNames: Set<string> = new Set<string>();
@@ -102,7 +117,8 @@ export class SpringBootGenerator {
     async generateProject(
         config: SpringBootProjectConfig, 
         openApiEndpoints: OpenAPIEndpoint[],
-        schemas: Record<string, any> = {}
+        schemas: Record<string, any> = {},
+        relationships: RelationshipInfo[] = []
     ): Promise<void> {
         const projectPath = path.join(config.targetDirectory, config.projectName);
 
@@ -127,7 +143,7 @@ export class SpringBootGenerator {
 
             // Generate controllers, services, repositories from OpenAPI
             logger.info('Generating controllers, services, and repositories...');
-            const resources = await this.generateControllersFromOpenAPI(projectPath, config, openApiEndpoints, schemas);
+            const resources = await this.generateControllersFromOpenAPI(projectPath, config, openApiEndpoints, schemas, relationships);
 
             // Store entity names for import resolution
             this.entityNames = new Set(resources.map(r => this.toPascalCase(r)));
@@ -285,7 +301,8 @@ export class SpringBootGenerator {
         projectPath: string,
         config: SpringBootProjectConfig,
         endpoints: OpenAPIEndpoint[],
-        schemas: Record<string, any>
+        schemas: Record<string, any>,
+        relationships: RelationshipInfo[] = []
     ): Promise<string[]> {
         // Group endpoints by resource
         const resourceEndpoints: Record<string, OpenAPIEndpoint[]> = {};
@@ -298,17 +315,38 @@ export class SpringBootGenerator {
             resourceEndpoints[resource].push(endpoint);
         });
 
+        // Build relationship lookups per entity
+        const entityRelationships: Record<string, {
+            manyToOne: RelationshipInfo[];
+            oneToMany: RelationshipInfo[];
+        }> = {};
+
+        for (const rel of relationships) {
+            const source = this.toPascalCase(rel.sourceEntity);
+            if (!entityRelationships[source]) {
+                entityRelationships[source] = { manyToOne: [], oneToMany: [] };
+            }
+            if (rel.type === 'ManyToOne') {
+                entityRelationships[source].manyToOne.push(rel);
+            } else if (rel.type === 'OneToMany') {
+                entityRelationships[source].oneToMany.push(rel);
+            }
+        }
+
         // Generate controller for each resource
         const resources = Object.keys(resourceEndpoints);
         for (const [resource, resourceEndpointsList] of Object.entries(resourceEndpoints)) {
-            await this.generateController(projectPath, config, resource, resourceEndpointsList);
-            await this.generateService(projectPath, config, resource);
-            await this.generateRepository(projectPath, config, resource);
+            const entityName = this.toPascalCase(resource);
+            const rels = entityRelationships[entityName] || { manyToOne: [], oneToMany: [] };
+
+            await this.generateController(projectPath, config, resource, resourceEndpointsList, rels);
+            await this.generateService(projectPath, config, resource, rels);
+            await this.generateRepository(projectPath, config, resource, rels);
             await this.generateMapper(projectPath, config, resource);
             
             // Find matching schema for this resource
             const resourceSchema = this.findSchemaForResource(resource, schemas);
-            await this.generateModelClasses(projectPath, config, resource, resourceSchema);
+            await this.generateModelClasses(projectPath, config, resource, resourceSchema, rels);
         }
         
         return resources;
@@ -480,12 +518,19 @@ export class SpringBootGenerator {
         projectPath: string,
         config: SpringBootProjectConfig,
         resource: string,
-        endpoints: OpenAPIEndpoint[]
+        endpoints: OpenAPIEndpoint[],
+        rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] }
     ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Controller';
         const entityName = this.toPascalCase(resource);
         
+        const childEndpoints = rels.oneToMany.map(r => ({
+            childResourceName: this.toKebabCase(r.targetEntity) + 's',
+            childEntityName: this.toPascalCase(r.targetEntity),
+            childServiceName: this.toPascalCase(r.targetEntity) + 'Service'
+        }));
+
         const template = await this.templateProvider.readSpringBootTemplate('Controller.java.template');
         const compiled = Handlebars.compile(template);
         const content = compiled({
@@ -494,6 +539,7 @@ export class SpringBootGenerator {
             entityName: entityName,
             resourceName: resource,
             serviceName: entityName + 'Service',
+            childEndpoints: childEndpoints.length > 0 ? childEndpoints : undefined,
             endpoints: endpoints.map(e => ({
                 method: e.method.toUpperCase(),
                 path: e.path,
@@ -507,11 +553,21 @@ export class SpringBootGenerator {
         await fs.promises.writeFile(filePath, content, 'utf-8');
     }
 
-    private async generateService(projectPath: string, config: SpringBootProjectConfig, resource: string): Promise<void> {
+    private async generateService(
+        projectPath: string, 
+        config: SpringBootProjectConfig, 
+        resource: string,
+        rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] }
+    ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Service';
         const entityName = this.toPascalCase(resource);
         
+        const parentRelationships = rels.manyToOne.map(r => ({
+            parentEntity: this.toPascalCase(r.targetEntity),
+            parentFieldName: this.toPascalCase(r.targetEntity)
+        }));
+
         const template = await this.templateProvider.readSpringBootTemplate('Service.java.template');
         const compiled = Handlebars.compile(template);
         const content = compiled({
@@ -519,7 +575,8 @@ export class SpringBootGenerator {
             className,
             entityName: entityName,
             resourceName: resource,
-            repositoryName: entityName + 'Repository'
+            repositoryName: entityName + 'Repository',
+            parentRelationships: parentRelationships.length > 0 ? parentRelationships : undefined
         });
 
         const filePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'service', `${className}.java`);
@@ -527,17 +584,28 @@ export class SpringBootGenerator {
         await fs.promises.writeFile(filePath, content, 'utf-8');
     }
 
-    private async generateRepository(projectPath: string, config: SpringBootProjectConfig, resource: string): Promise<void> {
+    private async generateRepository(
+        projectPath: string, 
+        config: SpringBootProjectConfig, 
+        resource: string,
+        rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] }
+    ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Repository';
         
+        const parentRelationships = rels.manyToOne.map(r => ({
+            parentEntity: this.toPascalCase(r.targetEntity),
+            parentFieldName: this.toPascalCase(r.targetEntity)
+        }));
+
         const template = await this.templateProvider.readSpringBootTemplate('Repository.java.template');
         const compiled = Handlebars.compile(template);
         const content = compiled({
             packageName: config.packageName,
             className,
             entityName: this.toPascalCase(resource),
-            resourceName: resource
+            resourceName: resource,
+            parentRelationships: parentRelationships.length > 0 ? parentRelationships : undefined
         });
 
         const filePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'repository', `${className}.java`);
@@ -636,7 +704,8 @@ export class SpringBootGenerator {
         projectPath: string, 
         config: SpringBootProjectConfig, 
         resource: string,
-        schema?: any
+        schema?: any,
+        rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] }
     ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const entityName = this.toPascalCase(resource);
@@ -664,7 +733,11 @@ export class SpringBootGenerator {
             logger.warn(`No schema found for ${entityName}, using default fields`);
         }
         
+        // Enrich fields with relationship annotations
+        const entityFields = this.enrichFieldsWithRelationships(fields, entityName, rels);
+
         // Calculate needed imports based on field types
+        const entityImports = this.calculateImports(entityFields, config.packageName, Array.from(this.entityNames));
         const imports = this.calculateImports(fields, config.packageName, Array.from(this.entityNames));
         
         // Generate Entity
@@ -675,8 +748,9 @@ export class SpringBootGenerator {
             className: entityName,
             tableName: resource.toLowerCase(),
             resourceName: resource,
-            fields,
-            imports: imports.join('\n')
+            fields: entityFields,
+            entityName: entityName,
+            imports: entityImports.join('\n')
         });
         const entityPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'entity', `${entityName}.java`);
         await fs.promises.mkdir(path.dirname(entityPath), { recursive: true });
@@ -696,6 +770,19 @@ export class SpringBootGenerator {
         await fs.promises.mkdir(path.dirname(requestPath), { recursive: true });
         await fs.promises.writeFile(requestPath, requestContent, 'utf-8');
         
+        // Build child collections for aggregate root response DTO
+        const childCollections = rels.oneToMany.map(r => ({
+            entityName: this.toPascalCase(r.targetEntity),
+            dtoType: this.toPascalCase(r.targetEntity) + 'Response',
+            fieldName: this.toCamelCase(r.targetEntity) + 's'
+        }));
+
+        // Calculate response imports (may need java.util.List for child collections)
+        const responseImports = this.calculateImports(fields, config.packageName, Array.from(this.entityNames));
+        if (childCollections.length > 0 && !responseImports.some(i => i.includes('java.util.List'))) {
+            responseImports.push('import java.util.List;');
+        }
+
         // Generate Response DTO
         const responseTemplate = await this.templateProvider.readSpringBootTemplate('ResponseDto.java.template');
         const responseCompiled = Handlebars.compile(responseTemplate);
@@ -704,7 +791,8 @@ export class SpringBootGenerator {
             className: entityName + 'Response',
             resourceName: resource,
             fields,
-            imports: imports.join('\n')
+            childCollections: childCollections.length > 0 ? childCollections : undefined,
+            imports: responseImports.join('\n')
         });
         const responsePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'dto', `${entityName}Response.java`);
         await fs.promises.mkdir(path.dirname(responsePath), { recursive: true });
@@ -875,7 +963,15 @@ export class SpringBootGenerator {
                 name: propName,
                 type: javaType,
                 required: requiredFields.has(propName),
-                isString: javaType === 'String'
+                isString: javaType === 'String',
+                maxLength: prop.maxLength ?? null,
+                minLength: prop.minLength ?? null,
+                pattern: prop.pattern ?? null,
+                minimum: prop.minimum ?? null,
+                maximum: prop.maximum ?? null,
+                enumValues: Array.isArray(prop.enum) ? prop.enum : null,
+                isEmail: prop.format === 'email',
+                isPositive: prop.minimum !== undefined && prop.minimum > 0 && prop.exclusiveMinimum === true
             });
         }
 
@@ -1261,5 +1357,79 @@ export class SpringBootGenerator {
             return '';
         }
         return pascal.charAt(0).toLowerCase() + pascal.slice(1);
+    }
+
+    private toSnakeCase(value: string): string {
+        return value
+            .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+            .replace(/[- ]+/g, '_')
+            .toLowerCase();
+    }
+
+    private toKebabCase(value: string): string {
+        return value
+            .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+            .replace(/[_ ]+/g, '-')
+            .toLowerCase();
+    }
+
+    /**
+     * Enrich fields with JPA relationship metadata.
+     * - ManyToOne: converts FK fields to entity references with @ManyToOne annotation data
+     * - OneToMany: adds collection fields with @OneToMany annotation data
+     */
+    private enrichFieldsWithRelationships(
+        fields: any[],
+        entityName: string,
+        rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] }
+    ): any[] {
+        if (rels.manyToOne.length === 0 && rels.oneToMany.length === 0) {
+            return fields;  // No relationships, return as-is for backward compatibility
+        }
+
+        const enriched = fields.map(field => {
+            // Check if this field is a FK reference field
+            const matchingManyToOne = rels.manyToOne.find(r => {
+                const targetLower = r.targetEntity.toLowerCase();
+                const fieldLower = field.name.toLowerCase();
+                return fieldLower === targetLower + '_id'
+                    || fieldLower === targetLower + 'id'
+                    || fieldLower === targetLower;
+            });
+
+            if (matchingManyToOne) {
+                const relatedEntity = this.toPascalCase(matchingManyToOne.targetEntity);
+                return {
+                    ...field,
+                    isManyToOne: true,
+                    relatedEntity: relatedEntity,
+                    columnName: field.name.includes('_') ? field.name : this.toSnakeCase(field.name),
+                    name: this.toCamelCase(matchingManyToOne.targetEntity),
+                    type: relatedEntity
+                };
+            }
+            return field;
+        });
+
+        // Add OneToMany collection fields
+        for (const oneToMany of rels.oneToMany) {
+            const childEntity = this.toPascalCase(oneToMany.targetEntity);
+            const fieldName = this.toCamelCase(oneToMany.targetEntity) + 's';
+            
+            // Don't add if already present
+            if (!enriched.some(f => f.name === fieldName)) {
+                enriched.push({
+                    name: fieldName,
+                    type: `List<${childEntity}>`,
+                    isOneToMany: true,
+                    relatedEntity: childEntity,
+                    mappedBy: this.toCamelCase(entityName),
+                    required: false,
+                    isString: false
+                });
+            }
+        }
+
+        return enriched;
     }
 }

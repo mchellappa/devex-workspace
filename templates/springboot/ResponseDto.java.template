@@ -65,6 +65,18 @@ public class {{className}} implements Serializable {
     private {{{type}}} {{name}};
     {{/each}}
 
+    {{#if childCollections}}
+    {{#each childCollections}}
+    /**
+     * Related {{entityName}} entities.
+     * Populated when using $expand or via nested endpoint.
+     */
+    @Schema(description = "Collection of related {{entityName}} entities")
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private List<{{dtoType}}> {{fieldName}};
+    {{/each}}
+    {{/if}}
+
     /**
      * Timestamp when this {{entityName}} was created.
      * Automatically set by the system.

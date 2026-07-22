@@ -104,8 +104,8 @@ public class {{className}} {
     /**
      * Retrieves {{resourceName}} using OData v4 query options.
      * <p>
-     * Translates OData $filter into a JPA {@link Specification} and $top/$skip/$orderby
-     * into a {@link Pageable}, then delegates to the repository's
+     * Translates OData $filter into a JPA Specification and $top/$skip/$orderby
+     * into a Pageable, then delegates to the repository's
      * {@code findAll(Specification, Pageable)} method.
      * </p>
      *
@@ -245,4 +245,24 @@ public class {{className}} {
         // Example: validate required fields, check constraints, verify business rules
         // throw new IllegalArgumentException("Validation message") if validation fails
     }
+
+    {{#if parentRelationships}}
+    {{#each parentRelationships}}
+    /**
+     * Retrieves {{../resourceName}} belonging to a specific {{parentEntity}}.
+     *
+     * @param {{camelCase parentFieldName}}Id the ID of the parent {{parentEntity}}
+     * @return list of {{../resourceName}} for the given parent
+     */
+    @Transactional(readOnly = true)
+    public List<{{../entityName}}Response> findBy{{parentFieldName}}Id(Long {{camelCase parentFieldName}}Id) {
+        Assert.notNull({{camelCase parentFieldName}}Id, "Parent ID must not be null");
+        log.debug("Fetching {{../resourceName}} by {{parentFieldName}} id: {}", {{camelCase parentFieldName}}Id);
+        return {{camelCase ../repositoryName}}.findBy{{parentFieldName}}Id({{camelCase parentFieldName}}Id)
+                .stream()
+                .map(mapper::toResponse)
+                .collect(Collectors.toList());
+    }
+    {{/each}}
+    {{/if}}
 }

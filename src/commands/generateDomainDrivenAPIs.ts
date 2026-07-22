@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as yaml from 'js-yaml';
 import { logger } from '../utils/logger';
 import { JiraService } from '../services/jiraService';
 import { AIService } from '../services/aiService';
@@ -13,6 +14,19 @@ interface DomainInfo {
     mermaidData?: string;
     csvData?: string;
     entities: string[];
+    relationships: RelationshipInfo[];
+    aggregateRoot?: string;
+}
+
+interface RelationshipInfo {
+    /** The entity that holds the FK (the "many" side or the owning side) */
+    sourceEntity: string;
+    /** The entity being referenced (the "one" side or the inverse side) */
+    targetEntity: string;
+    /** Relationship type */
+    type: 'OneToMany' | 'ManyToOne' | 'OneToOne' | 'ManyToMany';
+    /** Relationship label (e.g., "has", "belongs to") */
+    label: string;
 }
 
 interface CreatedStory {
@@ -94,6 +108,261 @@ function shouldRegenerateOpenAPI(domain: DomainInfo, openAPIPath: string, forceR
     }
     logger.info(`Reusing existing OpenAPI for ${domain.name} (ERD unchanged, file exists)`);
     return false; // Skip regeneration
+}
+
+interface OpenAPIIntegrityResult {
+    missingSchemas: string[];
+    missingResources: string[];
+    missingRelationshipFields: string[];
+}
+
+function toKebabCase(value: string): string {
+    return value
+        .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+        .replace(/[_\s]+/g, '-')
+        .toLowerCase();
+}
+
+function toPluralKebabCase(value: string): string {
+    if (value.endsWith('y')) {
+        return `${value.slice(0, -1)}ies`;
+    }
+    if (/(s|x|z|ch|sh)$/i.test(value)) {
+        return `${value}es`;
+    }
+    return `${value}s`;
+}
+
+function toPascalCase(value: string): string {
+    return value
+        .split(/[-_\s]+/)
+        .filter(Boolean)
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+        .join('');
+}
+
+function toSingular(value: string): string {
+    if (value.endsWith('ies')) {
+        return `${value.slice(0, -3)}y`;
+    }
+    if (/(ses|ches|shes|xes|zes)$/i.test(value)) {
+        return value.slice(0, -2);
+    }
+    if (value.endsWith('s') && !value.endsWith('ss')) {
+        return value.slice(0, -1);
+    }
+    return value;
+}
+
+function extractOpenAPIResources(paths: Record<string, any>): Set<string> {
+    const resources = new Set<string>();
+
+    Object.keys(paths).forEach(openApiPath => {
+        const parts = openApiPath.split('/').filter(part => part && !part.startsWith('{'));
+        const resource = parts.find(part => !/^(api|v\d+)$/i.test(part)) || parts[0];
+        if (resource) {
+            resources.add(resource.toLowerCase());
+        }
+    });
+
+    return resources;
+}
+
+function validateOpenAPIIntegrity(openApiSpec: any, entities: string[], relationships: RelationshipInfo[] = []): OpenAPIIntegrityResult {
+    const schemas = openApiSpec?.components?.schemas || {};
+    const schemaNames = new Set(Object.keys(schemas).map(name => name.toLowerCase()));
+    const resources = extractOpenAPIResources(openApiSpec?.paths || {});
+
+    const missingSchemas: string[] = [];
+    const missingResources: string[] = [];
+
+    entities.forEach(entity => {
+        const entityLower = entity.toLowerCase();
+        if (!schemaNames.has(entityLower)) {
+            missingSchemas.push(entity);
+        }
+
+        const singularResource = toKebabCase(entity);
+        const pluralResource = toPluralKebabCase(singularResource);
+        const hasResource = Array.from(resources).some(resource => {
+            const resourcePascal = toPascalCase(resource);
+            const singularPascal = toPascalCase(toSingular(resource));
+            return resource === singularResource
+                || resource === pluralResource
+                || resourcePascal === entity
+                || singularPascal === entity;
+        });
+
+        if (!hasResource) {
+            missingResources.push(entity);
+        }
+    });
+
+    const missingRelationshipFields: string[] = [];
+
+    // Validate relationship fields exist in schemas
+    for (const rel of relationships) {
+        if (rel.type === 'ManyToOne') {
+            // Check that the source entity schema has a FK field or $ref to target
+            const sourceSchemaKey = Object.keys(schemas).find(
+                k => k.toLowerCase() === rel.sourceEntity.toLowerCase()
+            );
+            if (sourceSchemaKey) {
+                const sourceProps = schemas[sourceSchemaKey]?.properties || {};
+                const targetLower = rel.targetEntity.toLowerCase();
+                const hasFkField = Object.entries(sourceProps).some(([name, prop]: [string, any]) => {
+                    const nameL = name.toLowerCase();
+                    return nameL.includes(targetLower + '_id')
+                        || nameL.includes(targetLower + 'id')
+                        || nameL === targetLower
+                        || (prop?.$ref && prop.$ref.toLowerCase().includes(targetLower));
+                });
+                if (!hasFkField) {
+                    missingRelationshipFields.push(
+                        `${rel.sourceEntity} missing FK/ref to ${rel.targetEntity}`
+                    );
+                }
+            }
+        }
+    }
+
+    return { missingSchemas, missingResources, missingRelationshipFields };
+}
+
+function parseOpenAPISpec(openAPISpec: string): any {
+    const parsed = yaml.load(openAPISpec);
+    if (!parsed || typeof parsed !== 'object') {
+        throw new Error('Generated OpenAPI spec is empty or invalid YAML');
+    }
+    return parsed;
+}
+
+/**
+ * Extracts only the mermaid entity definitions for the specified entities from the full context.
+ * This keeps the repair prompt focused and avoids re-sending the entire (potentially large) context.
+ */
+function extractMermaidEntitiesSection(fullContext: string, entityNames: string[]): string {
+    if (entityNames.length === 0) {
+        return fullContext;
+    }
+
+    // Try to extract the mermaid block
+    const mermaidStart = fullContext.indexOf('```mermaid');
+    const mermaidEnd = fullContext.indexOf('```', mermaidStart + 10);
+    if (mermaidStart === -1 || mermaidEnd === -1) {
+        return fullContext;
+    }
+
+    const mermaidContent = fullContext.substring(mermaidStart + 10, mermaidEnd).trim();
+    const entityLookup = new Set(entityNames.map(n => n.toLowerCase()));
+
+    // Extract only the entity body blocks for missing entities
+    const relevantBlocks: string[] = [];
+    const blockPattern = /^(\w+)\s*\{([^}]*)}/gm;
+    let match;
+    while ((match = blockPattern.exec(mermaidContent)) !== null) {
+        if (entityLookup.has(match[1].toLowerCase())) {
+            relevantBlocks.push(`${match[1]} {${match[2]}}`);
+        }
+    }
+
+    if (relevantBlocks.length === 0) {
+        return fullContext;
+    }
+
+    return `## Missing Mermaid Entities (partial context for repair)
+
+The following entity definitions were omitted from the previous OpenAPI spec and must be added:
+
+\`\`\`mermaid
+erDiagram
+${relevantBlocks.join('\n\n')}
+\`\`\`
+
+Entity names (${entityNames.join(', ')}) must each become:
+- A schema in components/schemas with all fields from the Mermaid definition above.
+- A REST resource at /api/v1/{entity-name} with GET (list + by ID), POST, PUT, DELETE.`;
+}
+
+async function ensureOpenAPIIntegrity(
+    aiService: AIService,
+    domain: DomainInfo,
+    fullContext: string,
+    apiInfo: { serviceName: string; version: string; format: 'yaml' | 'json'; includeExamples: boolean; includeSecurity: boolean },
+    openAPISpec: string
+): Promise<string> {
+    const initialSpec = parseOpenAPISpec(openAPISpec);
+    const initialIntegrity = validateOpenAPIIntegrity(initialSpec, domain.entities, domain.relationships);
+
+    if (initialIntegrity.missingRelationshipFields.length > 0) {
+        logger.warn(`Missing relationship fields: ${initialIntegrity.missingRelationshipFields.join(', ')}`);
+    }
+
+    if (initialIntegrity.missingSchemas.length === 0 && initialIntegrity.missingResources.length === 0) {
+        return openAPISpec;
+    }
+
+    logger.warn(
+        `OpenAPI integrity check failed for ${domain.name}. Missing schemas: ${initialIntegrity.missingSchemas.join(', ') || 'None'}. ` +
+        `Missing resources: ${initialIntegrity.missingResources.join(', ') || 'None'}. Retrying generation.`
+    );
+
+    // Build a focused repair context — only include the missing entities section from the
+    // mermaid data rather than the full context to avoid hitting model output limits.
+    const missingSection = extractMermaidEntitiesSection(fullContext, initialIntegrity.missingSchemas);
+
+    const repairContext = `${missingSection}
+
+## OpenAPI Integrity Repair
+The previous OpenAPI generation omitted required Mermaid entities.
+
+Missing schemas: ${initialIntegrity.missingSchemas.length > 0 ? initialIntegrity.missingSchemas.join(', ') : 'None'}
+Missing resource paths: ${initialIntegrity.missingResources.length > 0 ? initialIntegrity.missingResources.join(', ') : 'None'}
+Missing relationship fields: ${initialIntegrity.missingRelationshipFields.length > 0 ? initialIntegrity.missingRelationshipFields.join(', ') : 'None'}
+
+You MUST regenerate the FULL OpenAPI specification and ensure every missing entity above has:
+1. A top-level schema in components/schemas using the exact entity name.
+2. Its own REST resource path under /api/v1/.
+3. Full CRUD operations unless the Mermaid model explicitly indicates otherwise.
+4. Request/response models that preserve all Mermaid fields.
+5. Foreign key or $ref fields for relationship references (e.g. a ManyToOne relationship should have a FK field like targetEntityId).`;
+
+    let repairedSpecText: string;
+    try {
+        repairedSpecText = await aiService.generateOpenAPISpec(repairContext, apiInfo);
+    } catch (repairError: any) {
+        logger.warn(
+            `OpenAPI integrity repair call failed for ${domain.name}: ${repairError.message}. ` +
+            `Returning original (possibly incomplete) spec.`
+        );
+        return openAPISpec;
+    }
+
+    let repairedSpec: any;
+    try {
+        repairedSpec = parseOpenAPISpec(repairedSpecText);
+    } catch {
+        logger.warn(`Repaired OpenAPI spec for ${domain.name} is not valid YAML. Returning original spec.`);
+        return openAPISpec;
+    }
+
+    const repairedIntegrity = validateOpenAPIIntegrity(repairedSpec, domain.entities, domain.relationships);
+
+    if (repairedIntegrity.missingRelationshipFields.length > 0) {
+        logger.warn(`Missing relationship fields after repair: ${repairedIntegrity.missingRelationshipFields.join(', ')}`);
+    }
+
+    if (repairedIntegrity.missingSchemas.length > 0 || repairedIntegrity.missingResources.length > 0) {
+        logger.warn(
+            `OpenAPI integrity still incomplete for ${domain.name} after repair. ` +
+            `Missing schemas: ${repairedIntegrity.missingSchemas.join(', ') || 'None'}. ` +
+            `Missing resources: ${repairedIntegrity.missingResources.join(', ') || 'None'}. ` +
+            `Returning best-effort spec.`
+        );
+    } else {
+        logger.info(`OpenAPI integrity repaired successfully for ${domain.name}`);
+    }
+    return repairedSpecText;
 }
 
 /**
@@ -440,6 +709,15 @@ export async function generateDomainDrivenAPIsCommand(): Promise<void> {
                     }
                 }
 
+                // Build relationship summary for AI prompt
+                const relationshipSummary = domain.relationships.length > 0
+                    ? domain.relationships.map((r: RelationshipInfo) => `   - ${r.sourceEntity} ${r.type} ${r.targetEntity} (${r.label})`).join('\n')
+                    : '';
+
+                const relationshipInstructions = domain.relationships.length > 0
+                    ? `\n8. ENTITY RELATIONSHIPS (parsed from ERD — code generator handles JPA annotations and nested endpoints automatically):\n${relationshipSummary}\n   Keep FK fields as simple integer/int64 with a short description (e.g., description: FK to Customer). Do NOT add $ref objects or nested endpoints — these are generated automatically.\n`
+                    : '';
+
                 // Combine all available data sources (Mermaid ERD, image analysis, CSV)
                 const fullContext = `# ${domain.name} Domain
 
@@ -457,8 +735,8 @@ CRITICAL INSTRUCTIONS FOR MERMAID ERD PROCESSING:
 3. You MUST include ALL fields/columns from each entity definition in the corresponding OpenAPI schema — do NOT summarize, skip, or omit any fields.
 4. Map Mermaid SQL types to OpenAPI types: bigint->integer(int64), varchar->string, bit->boolean, date->string(date), datetime->string(date-time), timestamp->string(date-time), int->integer(int32), nvarchar->string, TinyInt->integer(int32).
 5. Mark PK fields with readOnly: true. Mark FK fields with their descriptions noting the referenced entity.
-6. Total entity count: ${domain.entities.length}. Your OpenAPI spec MUST have exactly ${domain.entities.length} schemas in components/schemas (one per entity) plus Request/Response variants.
-7. Do NOT group multiple entities into a single resource. Each entity = its own /api/v1/{entity-name} path with GET (list+single), POST, PUT, DELETE.` : ''}
+6. Total entity count: ${domain.entities.length}. Include a schema in components/schemas for each entity (e.g., ${domain.entities.slice(0, 5).join(', ')}${domain.entities.length > 5 ? `, ... and ${domain.entities.length - 5} more` : ''}).
+7. Do NOT group multiple entities into a single resource. Each entity = its own /api/v1/{entity-name} path with GET (list+single), POST, PUT, DELETE.${relationshipInstructions}` : ''}
 
 ${domain.csvData ? `## Data Model (from CSV)\n${domain.csvData}` : ''}
 
@@ -515,21 +793,26 @@ ${erdAnalysis ? `## ERD Analysis (from image)\n${erdAnalysis}` : ''}`;
 
                     const openAPIPath = path.join(openAPIFolder, `${domain.name.toLowerCase()}-api.yaml`);
                     
+                    const apiInfo = {
+                        serviceName: `${domain.name} API`,
+                        version: '1.0.0',
+                        format: 'yaml' as const,
+                        includeExamples: true,
+                        includeSecurity: true
+                    };
+
+                    let openAPISpecContent = '';
+
                     if (shouldRegenerateOpenAPI(domain, openAPIPath, reuseExistingOpenAPI)) {
                         progress.report({ 
                             increment: progressIncrement / 3, 
                             message: `Generating OpenAPI spec for ${domain.name}...` 
                         });
 
-                        const openAPISpec = await aiService.generateOpenAPISpec(fullContext, {
-                            serviceName: `${domain.name} API`,
-                            version: '1.0.0',
-                            format: 'yaml',
-                            includeExamples: true,
-                            includeSecurity: true
-                        });
+                        openAPISpecContent = await aiService.generateOpenAPISpec(fullContext, apiInfo);
+                        openAPISpecContent = await ensureOpenAPIIntegrity(aiService, domain, fullContext, apiInfo, openAPISpecContent);
 
-                        fs.writeFileSync(openAPIPath, openAPISpec, 'utf-8');
+                        fs.writeFileSync(openAPIPath, openAPISpecContent, 'utf-8');
                         logger.info(`Saved OpenAPI spec to: ${openAPIPath}`);
                     } else {
                         progress.report({ 
@@ -537,6 +820,10 @@ ${erdAnalysis ? `## ERD Analysis (from image)\n${erdAnalysis}` : ''}`;
                             message: `Reusing existing OpenAPI for ${domain.name}...` 
                         });
                         logger.info(`Reusing existing OpenAPI spec: ${openAPIPath}`);
+
+                        openAPISpecContent = fs.readFileSync(openAPIPath, 'utf-8');
+                        openAPISpecContent = await ensureOpenAPIIntegrity(aiService, domain, fullContext, apiInfo, openAPISpecContent);
+                        fs.writeFileSync(openAPIPath, openAPISpecContent, 'utf-8');
                     }
                     
                     createdStories[createdStories.length - 1].openAPIPath = openAPIPath;
@@ -583,9 +870,8 @@ ${erdAnalysis ? `## ERD Analysis (from image)\n${erdAnalysis}` : ''}`;
                                 const projectFolder = path.join(outputRootFolder, projectName);
 
                                 // Parse OpenAPI spec to get endpoints
-                                const yaml = await import('js-yaml');
                                 const openApiContent = fs.readFileSync(openAPIPath, 'utf-8');
-                                const openApiSpec: any = yaml.load(openApiContent);
+                                const openApiSpec: any = parseOpenAPISpec(openApiContent);
                                 
                                 // Extract endpoints from OpenAPI spec
                                 const endpoints: any[] = [];
@@ -621,7 +907,8 @@ ${erdAnalysis ? `## ERD Analysis (from image)\n${erdAnalysis}` : ''}`;
                                         buildTool: 'maven'
                                     },
                                     endpoints,
-                                    schemas
+                                    schemas,
+                                    domain.relationships
                                 );
 
                                 logger.info(`Generated Spring Boot project for ${domain.name} at: ${projectFolder}`);
@@ -842,6 +1129,23 @@ ${generateSpringBootNow ? `- **Spring Boot Projects:** \`${outputRootFolder}/*\`
     }
 }
 
+function classifyRelationship(leftCard: string, rightCard: string): 'OneToMany' | 'ManyToOne' | 'OneToOne' | 'ManyToMany' {
+    const isMany = (card: string): boolean => /[\{\}]/.test(card);
+    const leftIsMany = isMany(leftCard);
+    const rightIsMany = isMany(rightCard);
+
+    if (!leftIsMany && !rightIsMany) {
+        return 'OneToOne';
+    }
+    if (!leftIsMany && rightIsMany) {
+        return 'OneToMany';
+    }
+    if (leftIsMany && !rightIsMany) {
+        return 'ManyToOne';
+    }
+    return 'ManyToMany';
+}
+
 async function parseDomains(
     folderPath: string, 
     pngFiles: string[],
@@ -884,7 +1188,8 @@ async function parseDomains(
                         domains.set(domainName, {
                             name: domainName,
                             entities: currentPageEntities,
-                            csvData: currentPageData.join('\n')
+                            csvData: currentPageData.join('\n'),
+                            relationships: []
                         });
                     }
 
@@ -909,7 +1214,8 @@ async function parseDomains(
             domains.set(domainName, {
                 name: domainName,
                 entities: currentPageEntities,
-                csvData: currentPageData.join('\n')
+                csvData: currentPageData.join('\n'),
+                relationships: []
             });
         }
     }
@@ -929,7 +1235,8 @@ async function parseDomains(
             domains.set(domainName, {
                 name: domainName,
                 erdImagePath: path.join(folderPath, pngFile),
-                entities: []
+                entities: [],
+                relationships: []
             });
         }
     }
@@ -961,20 +1268,84 @@ async function parseDomains(
             }
         }
 
-        // Also extract entity names from relationship lines: "EntityA ||--o{ EntityB : label"
-        const relPattern = /^\s*(\w+)\s+[\|o\{}\<\>]+--[\|o\{}\<\>]+\s+(\w+)\s*:/gm;
+        // Parse relationship lines with cardinality: "EntityA <left>--<right> EntityB : label"
+        const relPattern = /^\s*(\w+)\s+([\|o\{\}]+)--([\|o\{\}]+)\s+(\w+)\s*:\s*"?([^"\n]*)"?/gm;
+        const relationships: RelationshipInfo[] = [];
+
         while ((match = relPattern.exec(mermaidContent)) !== null) {
-            const left = match[1];
-            const right = match[2];
-            if (left !== 'erDiagram') { mermaidEntitySet.add(left); }
-            if (right !== 'erDiagram') { mermaidEntitySet.add(right); }
+            const leftEntity = match[1];
+            const leftCard = match[2];
+            const rightCard = match[3];
+            const rightEntity = match[4];
+            const label = match[5]?.trim() || '';
+
+            if (leftEntity === 'erDiagram' || rightEntity === 'erDiagram') { continue; }
+
+            mermaidEntitySet.add(leftEntity);
+            mermaidEntitySet.add(rightEntity);
+
+            const relType = classifyRelationship(leftCard, rightCard);
+
+            if (relType === 'OneToMany') {
+                // leftEntity is the "one" side, rightEntity is the "many" side
+                relationships.push({
+                    sourceEntity: rightEntity,
+                    targetEntity: leftEntity,
+                    type: 'ManyToOne',
+                    label
+                });
+                relationships.push({
+                    sourceEntity: leftEntity,
+                    targetEntity: rightEntity,
+                    type: 'OneToMany',
+                    label
+                });
+            } else if (relType === 'ManyToOne') {
+                // leftEntity is the "many" side, rightEntity is the "one" side
+                relationships.push({
+                    sourceEntity: leftEntity,
+                    targetEntity: rightEntity,
+                    type: 'ManyToOne',
+                    label
+                });
+                relationships.push({
+                    sourceEntity: rightEntity,
+                    targetEntity: leftEntity,
+                    type: 'OneToMany',
+                    label
+                });
+            } else if (relType === 'OneToOne') {
+                relationships.push({
+                    sourceEntity: leftEntity,
+                    targetEntity: rightEntity,
+                    type: 'OneToOne',
+                    label
+                });
+            } else if (relType === 'ManyToMany') {
+                relationships.push({
+                    sourceEntity: leftEntity,
+                    targetEntity: rightEntity,
+                    type: 'ManyToMany',
+                    label
+                });
+            }
         }
 
         const mermaidEntities = Array.from(mermaidEntitySet).sort();
 
+        // Identify aggregate root: entity with no ManyToOne relationships to other entities in this domain
+        const manyToOneSources = new Set(
+            relationships
+                .filter(r => r.type === 'ManyToOne')
+                .map(r => r.sourceEntity)
+        );
+        const aggregateRoot = mermaidEntities.find(e => !manyToOneSources.has(e)) || mermaidEntities[0];
+
         if (domains.has(domainName)) {
             const existing = domains.get(domainName)!;
             existing.mermaidData = mermaidContent;
+            existing.relationships = relationships;
+            existing.aggregateRoot = aggregateRoot;
             // Merge entities from Mermaid if domain had no entities from CSV
             if (existing.entities.length === 0 && mermaidEntities.length > 0) {
                 existing.entities = mermaidEntities;
@@ -983,10 +1354,12 @@ async function parseDomains(
             domains.set(domainName, {
                 name: domainName,
                 mermaidData: mermaidContent,
-                entities: mermaidEntities
+                entities: mermaidEntities,
+                relationships: relationships,
+                aggregateRoot: aggregateRoot
             });
         }
-        logger.info(`Loaded Mermaid ERD for ${domainName}: ${mermaidEntities.length} entities`);
+        logger.info(`Loaded Mermaid ERD for ${domainName}: ${mermaidEntities.length} entities, ${relationships.length} relationships, aggregate root: ${aggregateRoot}`);
     }
 
     return Array.from(domains.values());
