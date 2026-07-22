@@ -598,7 +598,7 @@ Format the review in markdown, use emojis for visual clarity, and be specific wi
 
     async generateOpenAPISpec(
         lldContent: string,
-        apiInfo: { serviceName: string; version: string; format: 'yaml' | 'json'; includeExamples: boolean; includeSecurity: boolean }
+        apiInfo: { serviceName: string; version: string; format: 'yaml' | 'json'; includeExamples: boolean; includeSecurity: boolean; entityCount?: number }
     ): Promise<string> {
         const systemPrompt = `You are an expert API architect specializing in OpenAPI 3.0 specifications. Your role is to create complete, production-ready OpenAPI specs that follow REST API best practices.
 
@@ -685,18 +685,34 @@ Collection responses MUST use this envelope:
             '\n- Output MUST be valid YAML format with proper indentation (2 spaces)' :
             '\n- Output MUST be valid JSON format with proper indentation';
 
+        // For large domains (>15 entities), use compact mode to prevent output truncation
+        const isLargeDomain = (apiInfo.entityCount || 0) > 15;
+        const compactModeNote = isLargeDomain ? `
+
+**COMPACT OUTPUT MODE (CRITICAL — ${apiInfo.entityCount} entities detected):**
+This is a large domain. The output MUST be compact to avoid truncation. Follow these rules strictly:
+- Define ALL OData query parameters ($filter, $orderby, $top, $skip, $select, $expand, $count) ONCE in components/parameters and $ref them in each GET collection endpoint. Do NOT inline parameter definitions.
+- Define the X-B3-Trace-Id header parameter ONCE in components/parameters and $ref it in each operation. Do NOT inline.
+- Define standard error responses (400, 401, 403, 404, 500) ONCE in components/responses and $ref them in each operation. Do NOT inline error response schemas.
+- Define standard response headers ONCE in components/headers and $ref them. Do NOT repeat header definitions.
+- Use SHORT descriptions (max 10 words per description). Omit lengthy explanations.
+- Do NOT include examples for request or response bodies.
+- Do NOT include PATCH endpoints — only GET (list), GET (by ID), POST, PUT, DELETE.
+- Each path should have 4-5 operations maximum. Use $ref extensively to keep each operation definition to 10-15 lines.
+- The TOTAL output MUST be valid, complete YAML that does not get cut off. Prioritize completeness of ALL ${apiInfo.entityCount} entity schemas over verbosity of any single endpoint.` : '';
+
         const prompt = `Generate a complete OpenAPI 3.0.3 specification from the following Low-Level Design document.
 
 **API Information:**
 - Service Name: ${apiInfo.serviceName}
 - Version: ${apiInfo.version}
-- Format: ${apiInfo.format.toUpperCase()}${examplesNote}${securityNote}${formatNote}
+- Format: ${apiInfo.format.toUpperCase()}${examplesNote}${securityNote}${formatNote}${compactModeNote}
 
 **LLD Content:**
 ${lldContent}
-
+${isLargeDomain ? '' : `
 **Note:** The LLD content may include HTML tables with API definitions. Parse these tables carefully to extract endpoint details, parameters, and schemas.
-
+`}
 **Instructions:**
 1. Analyze the LLD and identify ALL entities/data models. If a Mermaid ERD is provided, EVERY entity defined in the ERD MUST become its own REST resource with full CRUD endpoints. Do NOT skip, merge, or summarize entities.
   - When the LLD includes an explicit Mermaid entity list, you MUST preserve those entity names exactly in components/schemas (for example: Party -> schema name Party, PartyRole -> schema name PartyRole).
@@ -707,29 +723,34 @@ ${lldContent}
    - components/schemas section (one schema per entity with ALL fields from the source data model — do not omit any fields)
    - components/headers section (Cache-Control, X-B3-Trace-Id, Manulife-Api-Version) as defined in the system prompt
    - components/responses section (common responses like 400, 401, 404, 500) — EVERY response MUST include $ref to all three standard headers${apiInfo.includeSecurity ? '\n   - components/securitySchemes section (authentication methods)\n   - security requirements for protected endpoints' : ''}
-3. For each endpoint include:
+3. For each endpoint include:${isLargeDomain ? `
+   - Short summary (max 10 words)
+   - Parameters via $ref to components/parameters
+   - Request body schema via $ref to components/schemas
+   - Response codes via $ref to components/responses where possible
+   - Tags for grouping` : `
    - Clear summary and description
    - All parameters (path, query, header) — EVERY operation MUST include the X-B3-Trace-Id required header parameter as defined in the system prompt
    - Request body schema with validation rules
    - All possible response codes with schemas — EVERY response MUST $ref the standard response headers
-   - Appropriate tags for grouping
+   - Appropriate tags for grouping`}
 4. For each schema include:
    - ALL properties/fields from the source data model (Mermaid ERD, CSV, or LLD) — do NOT summarize or skip fields
    - ALL property names MUST use snake_case (e.g., party_type_code, created_date, rk_customer_id)
    - Correct OpenAPI types mapped from source types (bigint->integer/int64, varchar->string, bit->boolean, date->string/date, datetime->string/date-time, timestamp->string/date-time, nvarchar->string)
-   - Required fields (non-nullable fields)
+   - Required fields (non-nullable fields)${isLargeDomain ? '' : `
    - Validation rules (minLength, maxLength from varchar(N), pattern, minimum, maximum, enum)
-   - Format specifications (email, date-time, uuid, etc.)
+   - Format specifications (email, date-time, uuid, etc.)`}
    - PK fields should be marked readOnly: true
    - FK fields should include description noting the referenced entity
 5. Use RESTful conventions with PII handling:
    - GET for retrieving non-PII resources
    - POST for creating resources AND for retrieving resources that contain PII fields (ssn, sin, date_of_birth, dob, email, phone, address, tax_id, national_id, passport, driver_license) — accept filter criteria in the request body
-   - PUT for full updates
-   - PATCH for partial updates
+   - PUT for full updates${isLargeDomain ? '' : `
+   - PATCH for partial updates`}
    - DELETE for removing resources
 6. Define an ErrorResponse schema in components/schemas as described in the system prompt. Use this schema for ALL 4xx and 5xx error responses throughout the spec.
-7. For all GET collection endpoints, add OData v4 query parameters ($filter, $orderby, $top, $skip, $select, $expand, $count) as defined in the system prompt
+7. ${isLargeDomain ? 'Define OData v4 query parameters ($filter, $orderby, $top, $skip, $select, $expand, $count) ONCE in components/parameters and $ref them in GET collection endpoints' : 'For all GET collection endpoints, add OData v4 query parameters ($filter, $orderby, $top, $skip, $select, $expand, $count) as defined in the system prompt'}
 8. Define an ODataResponse schema in components/schemas with @odata.context, @odata.count, @odata.nextLink, and value properties. Use this schema (or entity-specific variants) as the response for all collection endpoints
 9. Add a 400 error response for invalid OData query syntax (e.g., malformed $filter expression)
 

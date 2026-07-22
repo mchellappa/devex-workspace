@@ -794,12 +794,14 @@ ${erdAnalysis ? `## ERD Analysis (from image)\n${erdAnalysis}` : ''}`;
 
                     const openAPIPath = path.join(openAPIFolder, `${domain.name.toLowerCase()}-api.yaml`);
                     
+                    const isLargeDomain = domain.entities.length > 15;
                     const apiInfo = {
                         serviceName: `${domain.name} API`,
                         version: '1.0.0',
                         format: 'yaml' as const,
-                        includeExamples: true,
-                        includeSecurity: true
+                        includeExamples: !isLargeDomain,
+                        includeSecurity: true,
+                        entityCount: domain.entities.length
                     };
 
                     let openAPISpecContent = '';
