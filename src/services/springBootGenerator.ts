@@ -343,7 +343,9 @@ export class SpringBootGenerator {
         }> = {};
 
         for (const rel of relationships) {
-            const source = this.toPascalCase(rel.sourceEntity);
+            // Resolve Mermaid entity name to the actual generated class name
+            // e.g., "PartyRole" -> "PartyRoles" (via resource map lookup)
+            const source = this.resolveEntityToClassName(rel.sourceEntity);
             if (!entityRelationships[source]) {
                 entityRelationships[source] = { manyToOne: [], oneToMany: [] };
             }
