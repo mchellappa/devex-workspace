@@ -845,7 +845,7 @@ export class SpringBootGenerator {
                 return {
                     entityName: resolvedName,
                     dtoType: resolvedName + 'Response',
-                    fieldName: this.toCamelCase(resolvedName) + 's'
+                    fieldName: this.pascalToCamelCase(resolvedName) + 's'
                 };
             })
             .filter(c => {
@@ -1494,6 +1494,18 @@ export class SpringBootGenerator {
         return pascal.charAt(0).toLowerCase() + pascal.slice(1);
     }
 
+    /**
+     * Converts an already-PascalCase string to camelCase by lowering only the first char.
+     * Unlike toCamelCase(), this preserves internal capitals (e.g. "AddressTypes" → "addressTypes").
+     * Use this for inputs that have already been resolved to PascalCase class names.
+     */
+    private pascalToCamelCase(str: string): string {
+        if (!str) {
+            return '';
+        }
+        return str.charAt(0).toLowerCase() + str.slice(1);
+    }
+
     private toSnakeCase(value: string): string {
         return value
             .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
@@ -1522,6 +1534,9 @@ export class SpringBootGenerator {
             return fields;  // No relationships, return as-is for backward compatibility
         }
 
+        // Track which ManyToOne relationships were matched to FK fields
+        const matchedManyToOne = new Set<string>();
+
         const enriched = fields.map(field => {
             // Check if this field is a FK reference field
             // Normalize both sides by stripping underscores/hyphens so multi-word entities match:
@@ -1535,23 +1550,46 @@ export class SpringBootGenerator {
 
             if (matchingManyToOne) {
                 const relatedEntity = this.resolveEntityToClassName(matchingManyToOne.targetEntity);
+                matchedManyToOne.add(matchingManyToOne.targetEntity);
                 return {
                     ...field,
                     isManyToOne: true,
                     relatedEntity: relatedEntity,
                     columnName: field.name.includes('_') ? field.name : this.toSnakeCase(field.name),
-                    name: this.toCamelCase(relatedEntity),
+                    name: this.pascalToCamelCase(relatedEntity),
                     type: relatedEntity
                 };
             }
             return field;
         });
 
+        // Add ManyToOne fields for relationships that couldn't be matched to a FK field
+        // (e.g., FK field named "address_type_code" doesn't match entity "AddressTypes" by the _id convention)
+        for (const manyToOne of rels.manyToOne) {
+            if (!matchedManyToOne.has(manyToOne.targetEntity)) {
+                const relatedEntity = this.resolveEntityToClassName(manyToOne.targetEntity);
+                const fieldName = this.pascalToCamelCase(relatedEntity);
+                // Don't add if a field with the same name already exists
+                if (!enriched.some(f => f.name === fieldName)) {
+                    logger.info(`No FK field matched for ManyToOne to "${manyToOne.targetEntity}" on "${entityName}", adding explicit @ManyToOne field "${fieldName}"`);
+                    enriched.push({
+                        name: fieldName,
+                        type: relatedEntity,
+                        isManyToOne: true,
+                        relatedEntity: relatedEntity,
+                        columnName: this.toSnakeCase(relatedEntity) + '_id',
+                        required: false,
+                        isString: false
+                    });
+                }
+            }
+        }
+
         // Add OneToMany collection fields (deduplicated by resolved entity name)
         const addedOneToMany = new Set<string>();
         for (const oneToMany of rels.oneToMany) {
             const childEntity = this.resolveEntityToClassName(oneToMany.targetEntity);
-            const fieldName = this.toCamelCase(childEntity) + 's';
+            const fieldName = this.pascalToCamelCase(childEntity) + 's';
             
             // Don't add if already present (handles duplicate FKs to same entity)
             if (!addedOneToMany.has(childEntity) && !enriched.some(f => f.name === fieldName)) {
@@ -1561,7 +1599,7 @@ export class SpringBootGenerator {
                     type: `List<${childEntity}>`,
                     isOneToMany: true,
                     relatedEntity: childEntity,
-                    mappedBy: this.toCamelCase(entityName),
+                    mappedBy: this.pascalToCamelCase(entityName),
                     required: false,
                     isString: false
                 });
