@@ -113,6 +113,8 @@ export class SpringBootGenerator {
     private resourceNameMap: Map<string, string> = new Map();
     /** Relationship lookups per entity, populated during controller generation for use by test generation */
     private entityRelationships: Record<string, { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] }> = {};
+    /** Maps resolved class names (PascalCase) to original Mermaid entity names for table naming */
+    private mermaidEntityMap: Map<string, string> = new Map();
 
     constructor(templateProvider: TemplateProvider) {
         this.templateProvider = templateProvider;
@@ -357,6 +359,22 @@ export class SpringBootGenerator {
                 entityRelationships[source].oneToMany.push(rel);
             }
         }
+
+        // Build entity name map: resolved class name -> original Mermaid name
+        // e.g., "TCrOdsPlan" -> "T_CR_ODS_Plan"
+        this.mermaidEntityMap.clear();
+        for (const rel of relationships) {
+            const sourceResolved = this.resolveEntityToClassName(rel.sourceEntity);
+            if (!this.mermaidEntityMap.has(sourceResolved)) {
+                this.mermaidEntityMap.set(sourceResolved, rel.sourceEntity);
+            }
+            const targetResolved = this.resolveEntityToClassName(rel.targetEntity);
+            if (!this.mermaidEntityMap.has(targetResolved)) {
+                this.mermaidEntityMap.set(targetResolved, rel.targetEntity);
+            }
+        }
+        logger.info(`Mermaid entity map: ${JSON.stringify(Object.fromEntries(this.mermaidEntityMap))}`);
+
         // Store for use by test generation
         this.entityRelationships = entityRelationships;
 
@@ -813,7 +831,7 @@ export class SpringBootGenerator {
         const entityContent = entityCompiled({
             packageName: config.packageName,
             className: entityName,
-            tableName: resource.toLowerCase(),
+            tableName: this.mermaidEntityMap.get(entityName) || resource.toLowerCase(),
             resourceName: resource,
             fields: entityFields,
             entityName: entityName,

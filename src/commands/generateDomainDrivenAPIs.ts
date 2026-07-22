@@ -745,14 +745,39 @@ ${erdAnalysis ? `## ERD Analysis (from image)\n${erdAnalysis}` : ''}`;
 
                 progress.report({ 
                     increment: progressIncrement / 3, 
-                    message: `Creating Jira story for ${domain.name}...` 
+                    message: `Jira story for ${domain.name}...` 
                 });
 
-                // Create Jira story with complete LLD
-                const storyTitle = `${domain.name} Domain - API Implementation`;
-                const storyDescription = await generateStoryDescription(fullContext, domain);
+                // Prompt user for existing story key or create new
+                const storyKeyInput = await vscode.window.showInputBox({
+                    prompt: `Jira story for "${domain.name}" domain — enter existing key or leave blank to create new`,
+                    placeHolder: 'SWIFT-12345 (or blank to create new)',
+                    validateInput: (value) => {
+                        if (value && !/^[A-Z]+-\d+$/.test(value)) {
+                            return 'Enter a valid Jira issue key (e.g., SWIFT-12345) or leave empty';
+                        }
+                        return null;
+                    }
+                });
+
+                // If user presses Escape, skip this domain
+                if (storyKeyInput === undefined) {
+                    logger.info(`User skipped domain: ${domain.name}`);
+                    continue;
+                }
 
                 try {
+                let storyKey: string;
+
+                if (storyKeyInput && storyKeyInput.trim() !== '') {
+                    // Use existing story key — skip story creation and LLD generation
+                    storyKey = storyKeyInput.trim();
+                    logger.info(`Using existing Jira story: ${storyKey} for ${domain.name}`);
+                } else {
+                    // Create new story with complete LLD
+                    const storyTitle = `${domain.name} Domain - API Implementation`;
+                    const storyDescription = await generateStoryDescription(fullContext, domain);
+
                     const issueData: any = {
                         fields: {
                             project: {
@@ -775,14 +800,16 @@ ${erdAnalysis ? `## ERD Analysis (from image)\n${erdAnalysis}` : ''}`;
                     }
 
                     const createdIssue = await jiraService.createIssue(issueData);
+                    storyKey = createdIssue.key;
+                    logger.info(`Created Jira story: ${storyKey} for ${domain.name}`);
+                }
 
-                    logger.info(`Created Jira story: ${createdIssue.key} for ${domain.name}`);
-                    const newStory: CreatedStory = { 
-                        domain: domain.name, 
-                        issueKey: createdIssue.key,
-                        timestamp: Date.now()
-                    };
-                    createdStories.push(newStory);
+                const newStory: CreatedStory = { 
+                    domain: domain.name, 
+                    issueKey: storyKey,
+                    timestamp: Date.now()
+                };
+                createdStories.push(newStory);
 
                     // Generate or reuse OpenAPI spec for this domain
                     const userHomeDir = os.homedir();
@@ -844,7 +871,7 @@ ${erdAnalysis ? `## ERD Analysis (from image)\n${erdAnalysis}` : ''}`;
 
                     // Attach OpenAPI spec to Jira story
                     await jiraService.addComment(
-                        createdIssue.key,
+                        storyKey,
                         `**OpenAPI Specification Generated**\n\nLocation: \`${openAPIPath}\`\n\n${generateSpringBootNow ? 'Spring Boot code generation in progress...' : 'Use "DevEx: Implement Jira Story" command with this issue key to generate Spring Boot code.'}`
                     );
 
@@ -944,7 +971,7 @@ ${erdAnalysis ? `## ERD Analysis (from image)\n${erdAnalysis}` : ''}`;
                                         
                                         // Add test generation info to Jira comment
                                         await jiraService.addComment(
-                                            createdIssue.key,
+                                            storyKey,
                                             `**Spring Boot Project Generated**\n\nLocation: \`${projectFolder}\`\nPackage: \`${domainPackage}\`\n\n**Unit Tests Generated**\n✅ Test Files: ${successCount}/${totalCount}\n📊 Estimated Coverage: ~${avgCoverage.toFixed(0)}%\n\nProject is ready to compile and run tests!\n\`\`\`bash\ncd ${projectFolder}\nmvn test\n\`\`\``
                                         );
 
@@ -952,14 +979,14 @@ ${erdAnalysis ? `## ERD Analysis (from image)\n${erdAnalysis}` : ''}`;
                                         logger.error(`Failed to generate tests for ${domain.name}: ${testError.message}`);
                                         // Don't fail the whole process, just log and continue
                                         await jiraService.addComment(
-                                            createdIssue.key,
+                                            storyKey,
                                             `**Spring Boot Project Generated**\n\nLocation: \`${projectFolder}\`\nPackage: \`${domainPackage}\`\n\n⚠️ Test generation failed: ${testError.message}\n\nYou can manually generate tests using:\n\`DevEx: Generate Unit Tests for Entire Project\``
                                         );
                                     }
                                 } else {
                                     // Add comment without test info
                                     await jiraService.addComment(
-                                        createdIssue.key,
+                                        storyKey,
                                         `**Spring Boot Project Generated**\n\nLocation: \`${projectFolder}\`\nPackage: \`${domainPackage}\`\n\nProject is ready to compile and run!`
                                     );
                                 }
@@ -970,7 +997,7 @@ ${erdAnalysis ? `## ERD Analysis (from image)\n${erdAnalysis}` : ''}`;
                         }
 
                 } catch (error: any) {
-                    const errorMsg = `Failed to create story for ${domain.name}: ${error.message}`;
+                    const errorMsg = `Failed to process domain ${domain.name}: ${error.message}`;
                     logger.error(errorMsg);
                     vscode.window.showErrorMessage(errorMsg);
                     
