@@ -42,18 +42,17 @@ public class {{className}} implements Serializable {
     private static final long serialVersionUID = 1L;
 
     {{#each fields}}
-    /**
-     * The {{name}} of the {{../entityName}}.
-     * TODO: Customize validation annotations based on business requirements
-     */
     @Schema(description = "{{name}} field", example = "Sample {{name}}"{{#if required}}, required = true{{/if}})
-    {{#if required}}
-    @NotNull(message = "{{name}} is required")
-    {{#if isString}}
-    @NotBlank(message = "{{name}} cannot be blank")
-    @Size(min = 1, max = 255, message = "{{name}} must be between 1 and 255 characters")
-    {{/if}}
-    {{/if}}
-    private {{{type}}} {{name}};
+    {{#if required}}@NotNull(message = "{{name}} is required")
+    {{/if}}{{#if isString}}{{#if required}}@NotBlank(message = "{{name}} cannot be blank")
+    {{/if}}{{#if minLength}}{{#if maxLength}}@Size(min = {{minLength}}, max = {{maxLength}}, message = "{{name}} must be between {{minLength}} and {{maxLength}} characters")
+    {{else}}@Size(min = {{minLength}}, message = "{{name}} must be at least {{minLength}} characters")
+    {{/if}}{{else}}{{#if maxLength}}@Size(max = {{maxLength}}, message = "{{name}} must not exceed {{maxLength}} characters")
+    {{/if}}{{/if}}{{#if isEmail}}@Email(message = "{{name}} must be a valid email address")
+    {{/if}}{{/if}}{{#if pattern}}@Pattern(regexp = "{{pattern}}", message = "{{name}} has an invalid format")
+    {{/if}}{{#if minimum}}@Min(value = {{minimum}}, message = "{{name}} must be at least {{minimum}}")
+    {{/if}}{{#if maximum}}@Max(value = {{maximum}}, message = "{{name}} must be at most {{maximum}}")
+    {{/if}}{{#if enumValues}}@Pattern(regexp = "{{join enumValues '|'}}", message = "{{name}} must be one of: {{join enumValues ', '}}")
+    {{/if}}private {{{type}}} {{name}};
     {{/each}}
 }
