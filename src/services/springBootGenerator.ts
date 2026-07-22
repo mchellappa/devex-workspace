@@ -337,7 +337,16 @@ export class SpringBootGenerator {
         const resources = Object.keys(resourceEndpoints);
         for (const [resource, resourceEndpointsList] of Object.entries(resourceEndpoints)) {
             const entityName = this.toPascalCase(resource);
-            const rels = entityRelationships[entityName] || { manyToOne: [], oneToMany: [] };
+            // Try plural form first, then singular (Mermaid uses singular like "Party", 
+            // but OpenAPI resources are plural like "parties" -> "Parties")
+            const singularName = this.toPascalCase(this.toSingular(resource.toLowerCase()));
+            const rels = entityRelationships[entityName] 
+                || entityRelationships[singularName] 
+                || { manyToOne: [], oneToMany: [] };
+            
+            if (rels.manyToOne.length > 0 || rels.oneToMany.length > 0) {
+                logger.info(`Found ${rels.manyToOne.length} ManyToOne and ${rels.oneToMany.length} OneToMany relationships for ${entityName} (matched as ${singularName})`);
+            }
 
             await this.generateController(projectPath, config, resource, resourceEndpointsList, rels);
             await this.generateService(projectPath, config, resource, rels);

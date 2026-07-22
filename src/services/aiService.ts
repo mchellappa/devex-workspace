@@ -609,6 +609,7 @@ Format the review in markdown, use emojis for visual clarity, and be specific wi
 - Comprehensive schema definitions with validation rules
 - Clear descriptions for all endpoints, parameters, and responses
 - Naming conventions: kebab-case for URL path segments; snake_case for ALL schema properties, request/response body fields, query parameter names, and entity attributes. Java field names remain camelCase internally but MUST be annotated with @JsonProperty using the snake_case equivalent name.
+- Schema naming: Use SINGULAR PascalCase names for all schemas in components/schemas (e.g., Party, Person, PartyRole — NOT Parties, Persons, PartyRoles). Schema names MUST match the original entity names exactly as they appear in the data model. URL paths remain plural (e.g., /api/v1/parties for the Party schema).
 - Include common headers and error responses
 - Security schemes when appropriate (Bearer, OAuth2, API Key)
 
@@ -623,6 +624,7 @@ Format the review in markdown, use emojis for visual clarity, and be specific wi
 - FK fields (foreign keys) MUST be typed as integer/int64 and include a short description noting the referenced entity (e.g., description: FK to Customer)
 - Do NOT generate inline $ref objects for relationships — keep FK fields as simple integer fields
 - Do NOT generate nested collection endpoints — the code generator handles these automatically
+- Schema names in components/schemas MUST be SINGULAR and match the source entity names exactly (e.g., Party not Parties, Person not Persons). URL paths use the plural form (e.g., /api/v1/parties) but the schema they reference is singular (Party).
 
 **Standard Request Headers (MANDATORY on ALL operations):**
 Every API operation (GET, POST, PUT, PATCH, DELETE) MUST include the following header parameter:

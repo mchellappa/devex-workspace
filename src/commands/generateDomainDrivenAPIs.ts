@@ -736,7 +736,8 @@ CRITICAL INSTRUCTIONS FOR MERMAID ERD PROCESSING:
 4. Map Mermaid SQL types to OpenAPI types: bigint->integer(int64), varchar->string, bit->boolean, date->string(date), datetime->string(date-time), timestamp->string(date-time), int->integer(int32), nvarchar->string, TinyInt->integer(int32).
 5. Mark PK fields with readOnly: true. Mark FK fields with their descriptions noting the referenced entity.
 6. Total entity count: ${domain.entities.length}. Include a schema in components/schemas for each entity (e.g., ${domain.entities.slice(0, 5).join(', ')}${domain.entities.length > 5 ? `, ... and ${domain.entities.length - 5} more` : ''}).
-7. Do NOT group multiple entities into a single resource. Each entity = its own /api/v1/{entity-name} path with GET (list+single), POST, PUT, DELETE.${relationshipInstructions}` : ''}
+7. Do NOT group multiple entities into a single resource. Each entity = its own /api/v1/{entity-name} path with GET (list+single), POST, PUT, DELETE.
+8. Schema names in components/schemas MUST be SINGULAR and match the Mermaid entity names EXACTLY (e.g., Party not Parties, PersonName not PersonNames). URL paths use plural form (e.g., /api/v1/parties, /api/v1/person-names) but the schema referenced is always the singular entity name.${relationshipInstructions}` : ''}
 
 ${domain.csvData ? `## Data Model (from CSV)\n${domain.csvData}` : ''}
 
