@@ -608,10 +608,19 @@ export class SpringBootGenerator {
         const className = this.toPascalCase(resource) + 'Service';
         const entityName = this.toPascalCase(resource);
         
-        const parentRelationships = rels.manyToOne.map(r => ({
-            parentEntity: this.resolveEntityToClassName(r.targetEntity),
-            parentFieldName: this.resolveEntityToClassName(r.targetEntity)
-        }));
+        const seenParentFieldsService = new Set<string>();
+        const parentRelationships = rels.manyToOne
+            .map(r => ({
+                parentEntity: this.resolveEntityToClassName(r.targetEntity),
+                parentFieldName: this.resolveEntityToClassName(r.targetEntity)
+            }))
+            .filter(pr => {
+                if (seenParentFieldsService.has(pr.parentFieldName)) {
+                    return false;
+                }
+                seenParentFieldsService.add(pr.parentFieldName);
+                return true;
+            });
 
         const template = await this.templateProvider.readSpringBootTemplate('Service.java.template');
         const compiled = Handlebars.compile(template);
@@ -638,10 +647,19 @@ export class SpringBootGenerator {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Repository';
         
-        const parentRelationships = rels.manyToOne.map(r => ({
-            parentEntity: this.resolveEntityToClassName(r.targetEntity),
-            parentFieldName: this.resolveEntityToClassName(r.targetEntity)
-        }));
+        const seenParentFieldsRepo = new Set<string>();
+        const parentRelationships = rels.manyToOne
+            .map(r => ({
+                parentEntity: this.resolveEntityToClassName(r.targetEntity),
+                parentFieldName: this.resolveEntityToClassName(r.targetEntity)
+            }))
+            .filter(pr => {
+                if (seenParentFieldsRepo.has(pr.parentFieldName)) {
+                    return false;
+                }
+                seenParentFieldsRepo.add(pr.parentFieldName);
+                return true;
+            });
 
         const template = await this.templateProvider.readSpringBootTemplate('Repository.java.template');
         const compiled = Handlebars.compile(template);
