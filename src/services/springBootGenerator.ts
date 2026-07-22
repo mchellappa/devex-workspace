@@ -109,6 +109,8 @@ export interface RelationshipInfo {
 export class SpringBootGenerator {
     private templateProvider: TemplateProvider;
     private entityNames: Set<string> = new Set<string>();
+    /** Maps lowercase Mermaid entity names to the actual resource strings used by the generator */
+    private resourceNameMap: Map<string, string> = new Map();
 
     constructor(templateProvider: TemplateProvider) {
         this.templateProvider = templateProvider;
@@ -314,6 +316,20 @@ export class SpringBootGenerator {
             }
             resourceEndpoints[resource].push(endpoint);
         });
+
+        // Build resource-name map: maps lowercase Mermaid entity names to resource strings
+        // e.g., "partyrole" -> "party-roles", "party" -> "parties"
+        this.resourceNameMap.clear();
+        for (const resource of Object.keys(resourceEndpoints)) {
+            const singular = this.toSingular(resource.toLowerCase().replace(/-/g, ''));
+            this.resourceNameMap.set(singular, resource);
+            // Also map the resource itself (lowercased, no dashes)
+            const resourceNoDash = resource.toLowerCase().replace(/-/g, '');
+            if (resourceNoDash !== singular) {
+                this.resourceNameMap.set(resourceNoDash, resource);
+            }
+        }
+        logger.info(`Resource name map: ${JSON.stringify(Object.fromEntries(this.resourceNameMap))}`);
 
         // Build relationship lookups per entity
         const entityRelationships: Record<string, {
@@ -534,11 +550,24 @@ export class SpringBootGenerator {
         const className = this.toPascalCase(resource) + 'Controller';
         const entityName = this.toPascalCase(resource);
         
-        const childEndpoints = rels.oneToMany.map(r => ({
-            childResourceName: this.toKebabCase(r.targetEntity) + 's',
-            childEntityName: this.toPascalCase(r.targetEntity),
-            childServiceName: this.toPascalCase(r.targetEntity) + 'Service'
-        }));
+        // Build child endpoints, deduplicated by resolved service name
+        const seenChildServices = new Set<string>();
+        const childEndpoints = rels.oneToMany
+            .map(r => {
+                const resolvedName = this.resolveEntityToClassName(r.targetEntity);
+                return {
+                    childResourceName: this.toKebabCase(r.targetEntity) + 's',
+                    childEntityName: resolvedName,
+                    childServiceName: resolvedName + 'Service'
+                };
+            })
+            .filter(ep => {
+                if (seenChildServices.has(ep.childServiceName)) {
+                    return false;
+                }
+                seenChildServices.add(ep.childServiceName);
+                return true;
+            });
 
         const template = await this.templateProvider.readSpringBootTemplate('Controller.java.template');
         const compiled = Handlebars.compile(template);
@@ -573,8 +602,8 @@ export class SpringBootGenerator {
         const entityName = this.toPascalCase(resource);
         
         const parentRelationships = rels.manyToOne.map(r => ({
-            parentEntity: this.toPascalCase(r.targetEntity),
-            parentFieldName: this.toPascalCase(r.targetEntity)
+            parentEntity: this.resolveEntityToClassName(r.targetEntity),
+            parentFieldName: this.resolveEntityToClassName(r.targetEntity)
         }));
 
         const template = await this.templateProvider.readSpringBootTemplate('Service.java.template');
@@ -603,8 +632,8 @@ export class SpringBootGenerator {
         const className = this.toPascalCase(resource) + 'Repository';
         
         const parentRelationships = rels.manyToOne.map(r => ({
-            parentEntity: this.toPascalCase(r.targetEntity),
-            parentFieldName: this.toPascalCase(r.targetEntity)
+            parentEntity: this.resolveEntityToClassName(r.targetEntity),
+            parentFieldName: this.resolveEntityToClassName(r.targetEntity)
         }));
 
         const template = await this.templateProvider.readSpringBootTemplate('Repository.java.template');
@@ -779,12 +808,24 @@ export class SpringBootGenerator {
         await fs.promises.mkdir(path.dirname(requestPath), { recursive: true });
         await fs.promises.writeFile(requestPath, requestContent, 'utf-8');
         
-        // Build child collections for aggregate root response DTO
-        const childCollections = rels.oneToMany.map(r => ({
-            entityName: this.toPascalCase(r.targetEntity),
-            dtoType: this.toPascalCase(r.targetEntity) + 'Response',
-            fieldName: this.toCamelCase(r.targetEntity) + 's'
-        }));
+        // Build child collections for aggregate root response DTO (deduplicated)
+        const seenCollections = new Set<string>();
+        const childCollections = rels.oneToMany
+            .map(r => {
+                const resolvedName = this.resolveEntityToClassName(r.targetEntity);
+                return {
+                    entityName: resolvedName,
+                    dtoType: resolvedName + 'Response',
+                    fieldName: this.toCamelCase(resolvedName) + 's'
+                };
+            })
+            .filter(c => {
+                if (seenCollections.has(c.entityName)) {
+                    return false;
+                }
+                seenCollections.add(c.entityName);
+                return true;
+            });
 
         // Calculate response imports (may need java.util.List for child collections)
         const responseImports = this.calculateImports(fields, config.packageName, Array.from(this.entityNames));
@@ -1316,6 +1357,33 @@ export class SpringBootGenerator {
     }
 
     // Utility methods
+
+    /**
+     * Resolves a Mermaid entity name (e.g., "PartyRole") to the actual generated class name
+     * (e.g., "PartyRoles") by looking up the resource name map.
+     * 
+     * The problem: toPascalCase("PartyRole") → "Partyrole" (no delimiters, treated as one word).
+     * But the actual generated class uses the resource name from the URL path:
+     * "party-roles" → toPascalCase("party-roles") → "PartyRoles".
+     * 
+     * This method bridges that gap by mapping the Mermaid entity name to the resource-based class name.
+     */
+    private resolveEntityToClassName(mermaidEntityName: string): string {
+        // Lowercase and remove any non-alpha characters for lookup
+        const lookupKey = mermaidEntityName.toLowerCase().replace(/[-_\s]/g, '');
+        const resource = this.resourceNameMap.get(lookupKey);
+        if (resource) {
+            const resolved = this.toPascalCase(resource);
+            if (resolved !== this.toPascalCase(mermaidEntityName)) {
+                logger.info(`Resolved Mermaid entity "${mermaidEntityName}" → class "${resolved}" (via resource "${resource}")`);
+            }
+            return resolved;
+        }
+        // Fallback: return as-is (already PascalCase from Mermaid)
+        logger.debug(`No resource mapping for "${mermaidEntityName}", using as-is`);
+        return mermaidEntityName;
+    }
+
     private extractResourceName(path: string): string {
         if (!path) {
             logger.warn('extractResourceName called with empty path, using default "api"');
@@ -1407,26 +1475,28 @@ export class SpringBootGenerator {
             });
 
             if (matchingManyToOne) {
-                const relatedEntity = this.toPascalCase(matchingManyToOne.targetEntity);
+                const relatedEntity = this.resolveEntityToClassName(matchingManyToOne.targetEntity);
                 return {
                     ...field,
                     isManyToOne: true,
                     relatedEntity: relatedEntity,
                     columnName: field.name.includes('_') ? field.name : this.toSnakeCase(field.name),
-                    name: this.toCamelCase(matchingManyToOne.targetEntity),
+                    name: this.toCamelCase(relatedEntity),
                     type: relatedEntity
                 };
             }
             return field;
         });
 
-        // Add OneToMany collection fields
+        // Add OneToMany collection fields (deduplicated by resolved entity name)
+        const addedOneToMany = new Set<string>();
         for (const oneToMany of rels.oneToMany) {
-            const childEntity = this.toPascalCase(oneToMany.targetEntity);
-            const fieldName = this.toCamelCase(oneToMany.targetEntity) + 's';
+            const childEntity = this.resolveEntityToClassName(oneToMany.targetEntity);
+            const fieldName = this.toCamelCase(childEntity) + 's';
             
-            // Don't add if already present
-            if (!enriched.some(f => f.name === fieldName)) {
+            // Don't add if already present (handles duplicate FKs to same entity)
+            if (!addedOneToMany.has(childEntity) && !enriched.some(f => f.name === fieldName)) {
+                addedOneToMany.add(childEntity);
                 enriched.push({
                     name: fieldName,
                     type: `List<${childEntity}>`,
