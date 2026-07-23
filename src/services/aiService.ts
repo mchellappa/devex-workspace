@@ -695,6 +695,7 @@ This is a large domain. The output MUST be compact to avoid truncation. Follow t
 - Define the X-B3-Trace-Id header parameter ONCE in components/parameters and $ref it in each operation. Do NOT inline.
 - Define standard error responses (400, 401, 403, 404, 500) ONCE in components/responses and $ref them in each operation. Do NOT inline error response schemas.
 - Define standard response headers ONCE in components/headers and $ref them. Do NOT repeat header definitions.
+- CRITICAL: Every GET (by ID), POST, and PUT operation MUST include a success response (200 or 201) with a response body that references the entity schema. Example: 200: description: Success \\n content: application/json: schema: $ref: '#/components/schemas/EntityName'. Do NOT omit the response body schema.
 - Use SHORT descriptions (max 10 words per description). Omit lengthy explanations.
 - Do NOT include examples for request or response bodies.
 - Do NOT include PATCH endpoints — only GET (list), GET (by ID), POST, PUT, DELETE.
@@ -732,8 +733,9 @@ ${isLargeDomain ? '' : `
    - Clear summary and description
    - All parameters (path, query, header) — EVERY operation MUST include the X-B3-Trace-Id required header parameter as defined in the system prompt
    - Request body schema with validation rules
-   - All possible response codes with schemas — EVERY response MUST $ref the standard response headers
-   - Appropriate tags for grouping`}
+    - All possible response codes with schemas — EVERY response MUST $ref the standard response headers
+    - CRITICAL: Every GET (by ID), POST, and PUT MUST have a success response body (200 or 201) with content.application/json.schema.$ref pointing to the entity schema (e.g. $ref: '#/components/schemas/EntityName'). Never return an empty 200/201 response.
+    - Appropriate tags for grouping`}
 4. For each schema include:
    - ALL properties/fields from the source data model (Mermaid ERD, CSV, or LLD) — do NOT summarize or skip fields
    - ALL property names MUST match the EXACT column/field names from the source data model — preserve original casing (PascalCase, snake_case, or whatever the source uses)

@@ -114,6 +114,7 @@ interface OpenAPIIntegrityResult {
     missingSchemas: string[];
     missingResources: string[];
     missingRelationshipFields: string[];
+    missingResponseSchemas: string[];
 }
 
 function toKebabCase(value: string): string {
@@ -226,7 +227,33 @@ function validateOpenAPIIntegrity(openApiSpec: any, entities: string[], relation
         }
     }
 
-    return { missingSchemas, missingResources, missingRelationshipFields };
+    // Validate that GET (by ID), POST, and PUT endpoints have response body schemas
+    const missingResponseSchemas: string[] = [];
+    const paths = openApiSpec?.paths || {};
+    for (const [pathKey, pathItem] of Object.entries(paths) as [string, any][]) {
+        // Check GET by ID (paths with {id} or similar path params)
+        const isDetailPath = /\{[^}]+\}/.test(pathKey);
+        const methodsToCheck = isDetailPath ? ['get', 'put'] : ['post'];
+        for (const method of methodsToCheck) {
+            const operation = pathItem?.[method];
+            if (!operation) { continue; }
+            const successCodes = ['200', '201'];
+            const hasResponseBody = successCodes.some(code => {
+                const response = operation.responses?.[code];
+                if (!response) { return false; }
+                // Check for inline schema
+                if (response.content?.['application/json']?.schema) { return true; }
+                // Check for $ref to components/responses (which may contain a body)
+                if (response.$ref) { return true; }
+                return false;
+            });
+            if (!hasResponseBody) {
+                missingResponseSchemas.push(`${method.toUpperCase()} ${pathKey} missing success response body schema`);
+            }
+        }
+    }
+
+    return { missingSchemas, missingResources, missingRelationshipFields, missingResponseSchemas };
 }
 
 function parseOpenAPISpec(openAPISpec: string): any {
@@ -297,14 +324,18 @@ async function ensureOpenAPIIntegrity(
     if (initialIntegrity.missingRelationshipFields.length > 0) {
         logger.warn(`Missing relationship fields: ${initialIntegrity.missingRelationshipFields.join(', ')}`);
     }
+    if (initialIntegrity.missingResponseSchemas.length > 0) {
+        logger.warn(`Missing response body schemas: ${initialIntegrity.missingResponseSchemas.join(', ')}`);
+    }
 
-    if (initialIntegrity.missingSchemas.length === 0 && initialIntegrity.missingResources.length === 0) {
+    if (initialIntegrity.missingSchemas.length === 0 && initialIntegrity.missingResources.length === 0 && initialIntegrity.missingResponseSchemas.length === 0) {
         return openAPISpec;
     }
 
     logger.warn(
         `OpenAPI integrity check failed for ${domain.name}. Missing schemas: ${initialIntegrity.missingSchemas.join(', ') || 'None'}. ` +
-        `Missing resources: ${initialIntegrity.missingResources.join(', ') || 'None'}. Retrying generation.`
+        `Missing resources: ${initialIntegrity.missingResources.join(', ') || 'None'}. ` +
+        `Missing response schemas: ${initialIntegrity.missingResponseSchemas.length}. Retrying generation.`
     );
 
     // Build a focused repair context — only include the missing entities section from the
@@ -319,13 +350,15 @@ The previous OpenAPI generation omitted required Mermaid entities.
 Missing schemas: ${initialIntegrity.missingSchemas.length > 0 ? initialIntegrity.missingSchemas.join(', ') : 'None'}
 Missing resource paths: ${initialIntegrity.missingResources.length > 0 ? initialIntegrity.missingResources.join(', ') : 'None'}
 Missing relationship fields: ${initialIntegrity.missingRelationshipFields.length > 0 ? initialIntegrity.missingRelationshipFields.join(', ') : 'None'}
+Missing response body schemas: ${initialIntegrity.missingResponseSchemas.length > 0 ? initialIntegrity.missingResponseSchemas.join(', ') : 'None'}
 
 You MUST regenerate the FULL OpenAPI specification and ensure every missing entity above has:
 1. A top-level schema in components/schemas using the exact entity name.
 2. Its own REST resource path under /api/v1/.
 3. Full CRUD operations unless the Mermaid model explicitly indicates otherwise.
 4. Request/response models that preserve all Mermaid fields.
-5. Foreign key or $ref fields for relationship references (e.g. a ManyToOne relationship should have a FK field like targetEntityId).`;
+5. Foreign key or $ref fields for relationship references (e.g. a ManyToOne relationship should have a FK field like targetEntityId).
+6. Every GET (by ID), POST, and PUT operation MUST have a success response (200 or 201) with content.application/json.schema.$ref to the entity schema. Do NOT omit response body schemas.`;
 
     let repairedSpecText: string;
     try {
@@ -350,6 +383,9 @@ You MUST regenerate the FULL OpenAPI specification and ensure every missing enti
 
     if (repairedIntegrity.missingRelationshipFields.length > 0) {
         logger.warn(`Missing relationship fields after repair: ${repairedIntegrity.missingRelationshipFields.join(', ')}`);
+    }
+    if (repairedIntegrity.missingResponseSchemas.length > 0) {
+        logger.warn(`Missing response body schemas after repair: ${repairedIntegrity.missingResponseSchemas.join(', ')}`);
     }
 
     if (repairedIntegrity.missingSchemas.length > 0 || repairedIntegrity.missingResources.length > 0) {

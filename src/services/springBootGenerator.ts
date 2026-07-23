@@ -835,9 +835,11 @@ export class SpringBootGenerator {
         
         // Ensure every field has a columnName for @Column annotation
         // The columnName preserves the original field name from the data model (Mermaid/OpenAPI)
+        // The Java field name is converted to camelCase for convention compliance
         fields = fields.map(field => ({
             ...field,
-            columnName: field.columnName || field.name
+            columnName: field.columnName || field.name,
+            name: this.pascalToCamelCase(field.name)
         }));
 
         // Enrich fields with relationship annotations
@@ -1626,7 +1628,7 @@ export class SpringBootGenerator {
                     ...field,
                     isManyToOne: true,
                     relatedEntity: relatedEntity,
-                    columnName: field.name.includes('_') ? field.name : this.toSnakeCase(field.name),
+                    columnName: field.columnName || field.name,
                     name: this.pascalToCamelCase(relatedEntity),
                     type: relatedEntity
                 };
