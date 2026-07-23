@@ -349,7 +349,7 @@ public class {{className}} {
     })
     public ResponseEntity<?> get{{childEntityName}}ByParentId(
             @RequestHeader(value = "X-B3-Trace-Id", required = false) String traceId,
-            @PathVariable Long id) {
+            @PathVariable {{../pkFieldType}} id) {
         log.debug("GET /{{../resourceName}}/{}/{{childResourceName}}", id);
         // Verify parent exists
         if ({{camelCase ../serviceName}}.getById(id).isEmpty()) {

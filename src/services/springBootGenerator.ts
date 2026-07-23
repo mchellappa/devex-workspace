@@ -393,6 +393,26 @@ export class SpringBootGenerator {
         // Store for use by test generation
         this.entityRelationships = entityRelationships;
 
+        // First pass: build a PK type map for all entities so child generators
+        // can look up the parent's PK type (e.g., String vs Long) for FK methods
+        const entityPkTypeMap = new Map<string, string>();
+        for (const [resource] of Object.entries(resourceEndpoints)) {
+            const entityName = this.toPascalCase(resource);
+            const resourceSchema = this.findSchemaForResource(resource, schemas);
+            let csrFields = resourceSchema?.fields || [];
+            csrFields = csrFields.map((f: any) => ({ ...f, name: this.pascalToCamelCase(f.name) }));
+            let csrPkField = csrFields.find((f: any) => f.readOnly === true);
+            if (!csrPkField) {
+                csrPkField = csrFields.find((f: any) => {
+                    const lower = f.name.toLowerCase();
+                    return lower.endsWith('id') || lower.endsWith('code');
+                });
+            }
+            const pkType = csrPkField ? csrPkField.type : 'Long';
+            entityPkTypeMap.set(entityName, pkType);
+            logger.info(`PK type map: ${entityName} -> ${pkType}`);
+        }
+
         // Generate controller for each resource
         const resources = Object.keys(resourceEndpoints);
         for (const [resource, resourceEndpointsList] of Object.entries(resourceEndpoints)) {
@@ -411,7 +431,8 @@ export class SpringBootGenerator {
             // Find matching schema for this resource (needed for PK detection before generation)
             const resourceSchema = this.findSchemaForResource(resource, schemas);
 
-            // Detect PK field for controller/service/repository generation
+            // Use PK type from first-pass map
+            const csrPkFieldType = entityPkTypeMap.get(entityName) || 'Long';
             let csrFields = resourceSchema?.fields || [];
             csrFields = csrFields.map((f: any) => ({ ...f, name: this.pascalToCamelCase(f.name) }));
             let csrPkField = csrFields.find((f: any) => f.readOnly === true);
@@ -422,11 +443,10 @@ export class SpringBootGenerator {
                 });
             }
             const csrPkFieldName = csrPkField ? csrPkField.name : 'id';
-            const csrPkFieldType = csrPkField ? csrPkField.type : 'Long';
 
-            await this.generateController(projectPath, config, resource, resourceEndpointsList, rels, csrPkFieldName, csrPkFieldType);
-            await this.generateService(projectPath, config, resource, rels, csrPkFieldName, csrPkFieldType);
-            await this.generateRepository(projectPath, config, resource, rels, csrPkFieldName, csrPkFieldType);
+            await this.generateController(projectPath, config, resource, resourceEndpointsList, rels, csrPkFieldName, csrPkFieldType, entityPkTypeMap);
+            await this.generateService(projectPath, config, resource, rels, csrPkFieldName, csrPkFieldType, entityPkTypeMap);
+            await this.generateRepository(projectPath, config, resource, rels, csrPkFieldName, csrPkFieldType, entityPkTypeMap);
             await this.generateMapper(projectPath, config, resource);
             
             await this.generateModelClasses(projectPath, config, resource, resourceSchema, rels);
@@ -604,7 +624,8 @@ export class SpringBootGenerator {
         endpoints: OpenAPIEndpoint[],
         rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] },
         pkFieldName: string = 'id',
-        pkFieldType: string = 'Long'
+        pkFieldType: string = 'Long',
+        entityPkTypeMap: Map<string, string> = new Map()
     ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Controller';
@@ -659,7 +680,8 @@ export class SpringBootGenerator {
         resource: string,
         rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] },
         pkFieldName: string = 'id',
-        pkFieldType: string = 'Long'
+        pkFieldType: string = 'Long',
+        entityPkTypeMap: Map<string, string> = new Map()
     ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Service';
@@ -667,10 +689,14 @@ export class SpringBootGenerator {
         
         const seenParentFieldsService = new Set<string>();
         const parentRelationships = rels.manyToOne
-            .map(r => ({
-                parentEntity: this.resolveEntityToClassName(r.targetEntity),
-                parentFieldName: this.resolveEntityToClassName(r.targetEntity)
-            }))
+            .map(r => {
+                const resolvedParent = this.resolveEntityToClassName(r.targetEntity);
+                return {
+                    parentEntity: resolvedParent,
+                    parentFieldName: resolvedParent,
+                    parentPkType: entityPkTypeMap.get(resolvedParent) || 'Long'
+                };
+            })
             .filter(pr => {
                 if (seenParentFieldsService.has(pr.parentFieldName)) {
                     return false;
@@ -703,17 +729,22 @@ export class SpringBootGenerator {
         resource: string,
         rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] },
         pkFieldName: string = 'id',
-        pkFieldType: string = 'Long'
+        pkFieldType: string = 'Long',
+        entityPkTypeMap: Map<string, string> = new Map()
     ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Repository';
         
         const seenParentFieldsRepo = new Set<string>();
         const parentRelationships = rels.manyToOne
-            .map(r => ({
-                parentEntity: this.resolveEntityToClassName(r.targetEntity),
-                parentFieldName: this.resolveEntityToClassName(r.targetEntity)
-            }))
+            .map(r => {
+                const resolvedParent = this.resolveEntityToClassName(r.targetEntity);
+                return {
+                    parentEntity: resolvedParent,
+                    parentFieldName: resolvedParent,
+                    parentPkType: entityPkTypeMap.get(resolvedParent) || 'Long'
+                };
+            })
             .filter(pr => {
                 if (seenParentFieldsRepo.has(pr.parentFieldName)) {
                     return false;
@@ -1466,10 +1497,15 @@ export class SpringBootGenerator {
             { name: 'description', type: 'String' }
         ];
         if (schema && schema.fields && schema.fields.length > 0) {
-            // Use all non-ID, non-system fields from schema
+            // Use all non-PK, non-system fields from schema
+            // Must exclude the PK field (readOnly or matching pkFieldName) since Request DTOs don't have it
             fields = schema.fields.filter((f: any) => {
                 const fieldName = f.name.toLowerCase();
-                // Exclude ID and timestamp fields (usually readOnly/system fields)
+                const camelName = this.pascalToCamelCase(f.name);
+                // Exclude PK field (by readOnly flag or by matching pkFieldName)
+                if (f.readOnly === true) { return false; }
+                if (camelName === pkFieldName || fieldName === pkFieldName.toLowerCase()) { return false; }
+                // Exclude generic 'id' and timestamp fields
                 return fieldName !== 'id' && 
                        fieldName !== 'createdat' && 
                        fieldName !== 'updatedat';
@@ -1531,9 +1567,15 @@ export class SpringBootGenerator {
             { name: 'description', type: 'String' }
         ];
         if (schema && schema.fields && schema.fields.length > 0) {
-            // Use all non-ID, non-system fields from schema
+            // Use all non-PK, non-system fields from schema
+            // Must exclude the PK field (readOnly or matching pkFieldName) since Request DTOs don't have it
             fields = schema.fields.filter((f: any) => {
                 const fieldName = f.name.toLowerCase();
+                const camelName = this.pascalToCamelCase(f.name);
+                // Exclude PK field (by readOnly flag or by matching pkFieldName)
+                if (f.readOnly === true) { return false; }
+                if (camelName === pkFieldName || fieldName === pkFieldName.toLowerCase()) { return false; }
+                // Exclude generic 'id' and timestamp fields
                 return fieldName !== 'id' && 
                        fieldName !== 'createdat' && 
                        fieldName !== 'updatedat';

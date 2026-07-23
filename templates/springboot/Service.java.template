@@ -255,7 +255,7 @@ public class {{className}} {
      * @return list of {{../resourceName}} for the given parent
      */
     @Transactional(readOnly = true)
-    public List<{{../entityName}}Response> findBy{{parentFieldName}}Id(Long {{camelCase parentFieldName}}Id) {
+    public List<{{../entityName}}Response> findBy{{parentFieldName}}Id({{parentPkType}} {{camelCase parentFieldName}}Id) {
         Assert.notNull({{camelCase parentFieldName}}Id, "Parent ID must not be null");
         log.debug("Fetching {{../resourceName}} by {{parentFieldName}} id: {}", {{camelCase parentFieldName}}Id);
         return {{camelCase ../repositoryName}}.findBy{{parentFieldName}}Id({{camelCase parentFieldName}}Id)
