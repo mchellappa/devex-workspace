@@ -350,13 +350,31 @@ export class SpringBootGenerator {
             // Resolve Mermaid entity name to the actual generated class name
             // e.g., "PartyRole" -> "PartyRoles" (via resource map lookup)
             const source = this.resolveEntityToClassName(rel.sourceEntity);
+            const target = this.resolveEntityToClassName(rel.targetEntity);
             if (!entityRelationships[source]) {
                 entityRelationships[source] = { manyToOne: [], oneToMany: [] };
             }
+            if (!entityRelationships[target]) {
+                entityRelationships[target] = { manyToOne: [], oneToMany: [] };
+            }
             if (rel.type === 'ManyToOne') {
                 entityRelationships[source].manyToOne.push(rel);
+                // Create inverse OneToMany on the target
+                entityRelationships[target].oneToMany.push({
+                    ...rel,
+                    type: 'OneToMany'
+                });
             } else if (rel.type === 'OneToMany') {
                 entityRelationships[source].oneToMany.push(rel);
+                // Create inverse ManyToOne on the target (the "many" side needs the FK lookup method)
+                // Swap source/target so the ManyToOne's targetEntity points to the parent (the "one" side)
+                // This way the service generator can resolve the parent's class name from r.targetEntity
+                entityRelationships[target].manyToOne.push({
+                    sourceEntity: rel.targetEntity,
+                    targetEntity: rel.sourceEntity,
+                    type: 'ManyToOne',
+                    label: rel.label
+                });
             }
         }
 
