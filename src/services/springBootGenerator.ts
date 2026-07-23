@@ -824,13 +824,13 @@ export class SpringBootGenerator {
             fields = schema.fields;
             logger.info(`Using ${fields.length} fields from OpenAPI schema for ${entityName}`);
         } else {
-            // Fallback to default fields if no schema found
+            // Fallback to default fields if no schema found — this indicates a schema lookup failure
             fields = [
                 { name: 'name', type: 'String', required: true, isString: true },
                 { name: 'description', type: 'String', required: false, isString: true },
                 { name: 'status', type: 'String', required: false, isString: true }
             ];
-            logger.warn(`No schema found for ${entityName}, using default fields`);
+            logger.error(`SCHEMA LOOKUP FAILED for "${entityName}" (resource: "${resource}") — using default fields (name, description, status). This means the OpenAPI spec is missing a schema for this entity or the schema name doesn't match the resource path.`);
         }
         
         // Ensure every field has a columnName for @Column annotation
@@ -1188,7 +1188,21 @@ export class SpringBootGenerator {
             return this.normalizeSchema(resourcePascal, schemas[resourcePascal]);
         }
 
-        // Try singular/plural variations
+        // Normalize by stripping all dashes, underscores, spaces for comparison
+        // This handles "participant-title-restriction-types" matching "ParticipantTitleRestrictionTypes"
+        const resourceNorm = resourceLower.replace(/[-_\s]/g, '');
+        const resourceNormSingular = this.toSingular(resourceNorm);
+        const resourceNormPlural = this.toPlural(resourceNorm);
+
+        for (const [schemaName, schema] of Object.entries(schemas)) {
+            const schemaNorm = schemaName.toLowerCase().replace(/[-_\s]/g, '');
+            if (schemaNorm === resourceNorm || schemaNorm === resourceNormSingular || schemaNorm === resourceNormPlural) {
+                logger.info(`Found normalized schema match: ${schemaName} for resource ${resource}`);
+                return this.normalizeSchema(schemaName, schema);
+            }
+        }
+
+        // Try singular/plural variations with dashes intact (legacy path)
         const singular = this.toSingular(resourceLower);
         const plural = this.toPlural(resourceLower);
 
@@ -1200,7 +1214,17 @@ export class SpringBootGenerator {
             }
         }
 
-        logger.warn(`No schema found for resource: ${resource}`);
+        // Try matching via entityNames / mermaidEntityMap (handles T_CR_ODS_ prefixed entities)
+        for (const [schemaName, schema] of Object.entries(schemas)) {
+            const strippedSchema = this.stripTablePrefix(schemaName);
+            const strippedNorm = strippedSchema.toLowerCase().replace(/[-_\s]/g, '');
+            if (strippedNorm === resourceNorm || strippedNorm === resourceNormSingular || strippedNorm === resourceNormPlural) {
+                logger.info(`Found prefix-stripped schema match: ${schemaName} for resource ${resource}`);
+                return this.normalizeSchema(schemaName, schema);
+            }
+        }
+
+        logger.error(`No schema found for resource: ${resource}. Available schemas: ${Object.keys(schemas).join(', ')}`);
         return undefined;
     }
 
@@ -1209,6 +1233,9 @@ export class SpringBootGenerator {
      */
     private normalizeSchema(name: string, schema: any): any {
         const fields = this.convertOpenAPISchemaToFields(schema);
+        if (fields.length === 0) {
+            logger.warn(`Schema "${name}" was found but has no parseable properties — entity will use default fields`);
+        }
         return {
             ...schema,
             name,
