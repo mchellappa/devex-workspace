@@ -1400,7 +1400,10 @@ export class SpringBootGenerator {
                 return fieldName !== 'id' && 
                        fieldName !== 'createdat' && 
                        fieldName !== 'updatedat';
-            });
+            }).map((f: any) => ({
+                ...f,
+                name: this.pascalToCamelCase(f.name)
+            }));
             if (fields.length === 0) {
                 fields = [{ name: 'name', type: 'String' }, { name: 'description', type: 'String' }];
             }
@@ -1459,7 +1462,10 @@ export class SpringBootGenerator {
                 return fieldName !== 'id' && 
                        fieldName !== 'createdat' && 
                        fieldName !== 'updatedat';
-            });
+            }).map((f: any) => ({
+                ...f,
+                name: this.pascalToCamelCase(f.name)
+            }));
             if (fields.length === 0) {
                 fields = [{ name: 'name', type: 'String' }, { name: 'description', type: 'String' }];
             }
