@@ -430,9 +430,10 @@ export class SpringBootGenerator {
         // Store for use by test generation
         this.entityRelationships = entityRelationships;
 
-        // First pass: build a PK type map for all entities so child generators
-        // can look up the parent's PK type (e.g., String vs Long) for FK methods
+        // First pass: build PK type and field name maps for all entities so child generators
+        // can look up the parent's PK type (e.g., String vs Long) and PK field name for FK methods
         const entityPkTypeMap = new Map<string, string>();
+        const entityPkFieldNameMap = new Map<string, string>();
         for (const [resource] of Object.entries(resourceEndpoints)) {
             const entityName = this.toPascalCase(resource);
             const resourceSchema = this.findSchemaForResource(resource, schemas);
@@ -446,8 +447,10 @@ export class SpringBootGenerator {
                 });
             }
             const pkType = csrPkField ? csrPkField.type : 'Long';
+            const pkFieldName = csrPkField ? csrPkField.name : 'id';
             entityPkTypeMap.set(entityName, pkType);
-            logger.info(`PK type map: ${entityName} -> ${pkType}`);
+            entityPkFieldNameMap.set(entityName, pkFieldName);
+            logger.info(`PK map: ${entityName} -> ${pkFieldName} (${pkType})`);
         }
 
         // Generate controller for each resource
@@ -481,9 +484,9 @@ export class SpringBootGenerator {
             }
             const csrPkFieldName = csrPkField ? csrPkField.name : 'id';
 
-            await this.generateController(projectPath, config, resource, resourceEndpointsList, rels, csrPkFieldName, csrPkFieldType, entityPkTypeMap);
-            await this.generateService(projectPath, config, resource, rels, csrPkFieldName, csrPkFieldType, entityPkTypeMap);
-            await this.generateRepository(projectPath, config, resource, rels, csrPkFieldName, csrPkFieldType, entityPkTypeMap);
+            await this.generateController(projectPath, config, resource, resourceEndpointsList, rels, csrPkFieldName, csrPkFieldType, entityPkTypeMap, entityPkFieldNameMap);
+            await this.generateService(projectPath, config, resource, rels, csrPkFieldName, csrPkFieldType, entityPkTypeMap, entityPkFieldNameMap);
+            await this.generateRepository(projectPath, config, resource, rels, csrPkFieldName, csrPkFieldType, entityPkTypeMap, entityPkFieldNameMap);
             await this.generateMapper(projectPath, config, resource);
             
             await this.generateModelClasses(projectPath, config, resource, resourceSchema, rels);
@@ -662,7 +665,8 @@ export class SpringBootGenerator {
         rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] },
         pkFieldName: string = 'id',
         pkFieldType: string = 'Long',
-        entityPkTypeMap: Map<string, string> = new Map()
+        entityPkTypeMap: Map<string, string> = new Map(),
+        entityPkFieldNameMap: Map<string, string> = new Map()
     ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Controller';
@@ -718,7 +722,8 @@ export class SpringBootGenerator {
         rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] },
         pkFieldName: string = 'id',
         pkFieldType: string = 'Long',
-        entityPkTypeMap: Map<string, string> = new Map()
+        entityPkTypeMap: Map<string, string> = new Map(),
+        entityPkFieldNameMap: Map<string, string> = new Map()
     ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Service';
@@ -728,10 +733,12 @@ export class SpringBootGenerator {
         const parentRelationships = rels.manyToOne
             .map(r => {
                 const resolvedParent = this.resolveEntityToClassName(r.targetEntity);
+                const parentPkField = entityPkFieldNameMap.get(resolvedParent) || 'id';
                 return {
                     parentEntity: resolvedParent,
                     parentFieldName: resolvedParent,
-                    parentPkType: entityPkTypeMap.get(resolvedParent) || 'Long'
+                    parentPkType: entityPkTypeMap.get(resolvedParent) || 'Long',
+                    parentPkFieldName: parentPkField
                 };
             })
             .filter(pr => {
@@ -767,7 +774,8 @@ export class SpringBootGenerator {
         rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] },
         pkFieldName: string = 'id',
         pkFieldType: string = 'Long',
-        entityPkTypeMap: Map<string, string> = new Map()
+        entityPkTypeMap: Map<string, string> = new Map(),
+        entityPkFieldNameMap: Map<string, string> = new Map()
     ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Repository';
@@ -776,10 +784,12 @@ export class SpringBootGenerator {
         const parentRelationships = rels.manyToOne
             .map(r => {
                 const resolvedParent = this.resolveEntityToClassName(r.targetEntity);
+                const parentPkField = entityPkFieldNameMap.get(resolvedParent) || 'id';
                 return {
                     parentEntity: resolvedParent,
                     parentFieldName: resolvedParent,
-                    parentPkType: entityPkTypeMap.get(resolvedParent) || 'Long'
+                    parentPkType: entityPkTypeMap.get(resolvedParent) || 'Long',
+                    parentPkFieldName: parentPkField
                 };
             })
             .filter(pr => {

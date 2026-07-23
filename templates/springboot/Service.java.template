@@ -251,14 +251,14 @@ public class {{className}} {
     /**
      * Retrieves {{../resourceName}} belonging to a specific {{parentEntity}}.
      *
-     * @param {{camelCase parentFieldName}}Id the ID of the parent {{parentEntity}}
+     * @param {{camelCase parentPkFieldName}} the {{parentPkFieldName}} of the parent {{parentEntity}}
      * @return list of {{../resourceName}} for the given parent
      */
     @Transactional(readOnly = true)
-    public List<{{../entityName}}Response> findBy{{parentFieldName}}Id({{parentPkType}} {{camelCase parentFieldName}}Id) {
-        Assert.notNull({{camelCase parentFieldName}}Id, "Parent ID must not be null");
-        log.debug("Fetching {{../resourceName}} by {{parentFieldName}} id: {}", {{camelCase parentFieldName}}Id);
-        return {{camelCase ../repositoryName}}.findBy{{parentFieldName}}Id({{camelCase parentFieldName}}Id)
+    public List<{{../entityName}}Response> findBy{{parentFieldName}}_{{pascalCase parentPkFieldName}}({{parentPkType}} {{camelCase parentPkFieldName}}) {
+        Assert.notNull({{camelCase parentPkFieldName}}, "Parent {{parentPkFieldName}} must not be null");
+        log.debug("Fetching {{../resourceName}} by {{parentFieldName}} {{parentPkFieldName}}: {}", {{camelCase parentPkFieldName}});
+        return {{camelCase ../repositoryName}}.findBy{{parentFieldName}}_{{pascalCase parentPkFieldName}}({{camelCase parentPkFieldName}})
                 .stream()
                 .map(mapper::toResponse)
                 .collect(Collectors.toList());

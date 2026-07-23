@@ -202,19 +202,19 @@ public interface {{className}} extends JpaRepository<{{entityName}}, {{pkFieldTy
     /**
      * Find all {{../entityName}} entities belonging to a specific {{parentEntity}}.
      *
-     * @param {{camelCase parentFieldName}}Id the ID of the parent {{parentEntity}}
+     * @param {{camelCase parentPkFieldName}} the {{parentPkFieldName}} of the parent {{parentEntity}}
      * @return list of {{../entityName}} entities for the given parent
      */
-    List<{{../entityName}}> findBy{{parentFieldName}}Id({{parentPkType}} {{camelCase parentFieldName}}Id);
+    List<{{../entityName}}> findBy{{parentFieldName}}_{{pascalCase parentPkFieldName}}({{parentPkType}} {{camelCase parentPkFieldName}});
 
     /**
      * Find all {{../entityName}} entities belonging to a specific {{parentEntity}} with pagination.
      *
-     * @param {{camelCase parentFieldName}}Id the ID of the parent {{parentEntity}}
+     * @param {{camelCase parentPkFieldName}} the {{parentPkFieldName}} of the parent {{parentEntity}}
      * @param pageable pagination parameters
      * @return page of {{../entityName}} entities for the given parent
      */
-    Page<{{../entityName}}> findBy{{parentFieldName}}Id({{parentPkType}} {{camelCase parentFieldName}}Id, Pageable pageable);
+    Page<{{../entityName}}> findBy{{parentFieldName}}_{{pascalCase parentPkFieldName}}({{parentPkType}} {{camelCase parentPkFieldName}}, Pageable pageable);
     {{/each}}
     {{/if}}
 }

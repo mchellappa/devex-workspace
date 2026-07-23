@@ -335,7 +335,7 @@ public class {{className}} {
      * Retrieves {{childResourceName}} belonging to this {{../entityName}}.
      * Nested endpoint: GET /{{../resourceName}}/{id}/{{childResourceName}}
      *
-     * @param id the ID of the parent {{../entityName}}
+     * @param id the {{../pkFieldName}} of the parent {{../entityName}}
      * @return list of {{childEntityName}} entities belonging to the parent
      */
     @GetMapping("/{id}/{{childResourceName}}")
@@ -355,7 +355,7 @@ public class {{className}} {
         if ({{camelCase ../serviceName}}.getById(id).isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        var children = {{camelCase childServiceName}}.findBy{{../entityName}}Id(id);
+        var children = {{camelCase childServiceName}}.findBy{{../entityName}}_{{pascalCase ../pkFieldName}}(id);
         HttpHeaders headers = buildResponseHeaders(traceId);
         return ResponseEntity.ok().headers(headers).body(children);
     }
