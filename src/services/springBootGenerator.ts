@@ -346,6 +346,15 @@ export class SpringBootGenerator {
             oneToMany: RelationshipInfo[];
         }> = {};
 
+        // Helper to check if a relationship already exists in an array (prevents duplicates)
+        const hasRelationship = (arr: RelationshipInfo[], sourceEntity: string, targetEntity: string): boolean => {
+            return arr.some(r => {
+                const rSource = this.resolveEntityToClassName(r.sourceEntity);
+                const rTarget = this.resolveEntityToClassName(r.targetEntity);
+                return rSource === sourceEntity && rTarget === targetEntity;
+            });
+        };
+
         for (const rel of relationships) {
             // Resolve Mermaid entity name to the actual generated class name
             // e.g., "PartyRole" -> "PartyRoles" (via resource map lookup)
@@ -358,23 +367,33 @@ export class SpringBootGenerator {
                 entityRelationships[target] = { manyToOne: [], oneToMany: [] };
             }
             if (rel.type === 'ManyToOne') {
-                entityRelationships[source].manyToOne.push(rel);
-                // Create inverse OneToMany on the target
-                entityRelationships[target].oneToMany.push({
-                    ...rel,
-                    type: 'OneToMany'
-                });
+                if (!hasRelationship(entityRelationships[source].manyToOne, source, target)) {
+                    entityRelationships[source].manyToOne.push(rel);
+                }
+                // Create inverse OneToMany on the target (only if not already present)
+                if (!hasRelationship(entityRelationships[target].oneToMany, target, source)) {
+                    entityRelationships[target].oneToMany.push({
+                        ...rel,
+                        sourceEntity: rel.targetEntity,
+                        targetEntity: rel.sourceEntity,
+                        type: 'OneToMany'
+                    });
+                }
             } else if (rel.type === 'OneToMany') {
-                entityRelationships[source].oneToMany.push(rel);
-                // Create inverse ManyToOne on the target (the "many" side needs the FK lookup method)
+                if (!hasRelationship(entityRelationships[source].oneToMany, source, target)) {
+                    entityRelationships[source].oneToMany.push(rel);
+                }
+                // Create inverse ManyToOne on the target (only if not already present)
                 // Swap source/target so the ManyToOne's targetEntity points to the parent (the "one" side)
                 // This way the service generator can resolve the parent's class name from r.targetEntity
-                entityRelationships[target].manyToOne.push({
-                    sourceEntity: rel.targetEntity,
-                    targetEntity: rel.sourceEntity,
-                    type: 'ManyToOne',
-                    label: rel.label
-                });
+                if (!hasRelationship(entityRelationships[target].manyToOne, target, source)) {
+                    entityRelationships[target].manyToOne.push({
+                        sourceEntity: rel.targetEntity,
+                        targetEntity: rel.sourceEntity,
+                        type: 'ManyToOne',
+                        label: rel.label
+                    });
+                }
             }
         }
 
