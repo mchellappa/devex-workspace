@@ -51,11 +51,10 @@ public class {{className}} implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
-     * Unique identifier for this {{entityName}}.
-     * Assigned by the database on creation.
+     * Primary key for this {{entityName}}.
      */
-    @Schema(description = "Unique identifier", example = "1", accessMode = Schema.AccessMode.READ_ONLY)
-    private Long id;
+    @Schema(description = "Primary key identifier", accessMode = Schema.AccessMode.READ_ONLY)
+    private {{pkFieldType}} {{pkFieldName}};
 
     {{#each fields}}
     /**

@@ -408,13 +408,27 @@ export class SpringBootGenerator {
                 logger.info(`Found ${rels.manyToOne.length} ManyToOne and ${rels.oneToMany.length} OneToMany relationships for ${entityName} (matched as ${singularName})`);
             }
 
-            await this.generateController(projectPath, config, resource, resourceEndpointsList, rels);
-            await this.generateService(projectPath, config, resource, rels);
-            await this.generateRepository(projectPath, config, resource, rels);
+            // Find matching schema for this resource (needed for PK detection before generation)
+            const resourceSchema = this.findSchemaForResource(resource, schemas);
+
+            // Detect PK field for controller/service/repository generation
+            let csrFields = resourceSchema?.fields || [];
+            csrFields = csrFields.map((f: any) => ({ ...f, name: this.pascalToCamelCase(f.name) }));
+            let csrPkField = csrFields.find((f: any) => f.readOnly === true);
+            if (!csrPkField) {
+                csrPkField = csrFields.find((f: any) => {
+                    const lower = f.name.toLowerCase();
+                    return lower.endsWith('id') || lower.endsWith('code');
+                });
+            }
+            const csrPkFieldName = csrPkField ? csrPkField.name : 'id';
+            const csrPkFieldType = csrPkField ? csrPkField.type : 'Long';
+
+            await this.generateController(projectPath, config, resource, resourceEndpointsList, rels, csrPkFieldName, csrPkFieldType);
+            await this.generateService(projectPath, config, resource, rels, csrPkFieldName, csrPkFieldType);
+            await this.generateRepository(projectPath, config, resource, rels, csrPkFieldName, csrPkFieldType);
             await this.generateMapper(projectPath, config, resource);
             
-            // Find matching schema for this resource
-            const resourceSchema = this.findSchemaForResource(resource, schemas);
             await this.generateModelClasses(projectPath, config, resource, resourceSchema, rels);
         }
         
@@ -588,7 +602,9 @@ export class SpringBootGenerator {
         config: SpringBootProjectConfig,
         resource: string,
         endpoints: OpenAPIEndpoint[],
-        rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] }
+        rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] },
+        pkFieldName: string = 'id',
+        pkFieldType: string = 'Long'
     ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Controller';
@@ -622,6 +638,8 @@ export class SpringBootGenerator {
             resourceName: resource,
             serviceName: entityName + 'Service',
             childEndpoints: childEndpoints.length > 0 ? childEndpoints : undefined,
+            pkFieldName,
+            pkFieldType,
             endpoints: endpoints.map(e => ({
                 method: e.method.toUpperCase(),
                 path: e.path,
@@ -639,7 +657,9 @@ export class SpringBootGenerator {
         projectPath: string, 
         config: SpringBootProjectConfig, 
         resource: string,
-        rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] }
+        rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] },
+        pkFieldName: string = 'id',
+        pkFieldType: string = 'Long'
     ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Service';
@@ -667,7 +687,9 @@ export class SpringBootGenerator {
             entityName: entityName,
             resourceName: resource,
             repositoryName: entityName + 'Repository',
-            parentRelationships: parentRelationships.length > 0 ? parentRelationships : undefined
+            parentRelationships: parentRelationships.length > 0 ? parentRelationships : undefined,
+            pkFieldName,
+            pkFieldType
         });
 
         const filePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'service', `${className}.java`);
@@ -679,7 +701,9 @@ export class SpringBootGenerator {
         projectPath: string, 
         config: SpringBootProjectConfig, 
         resource: string,
-        rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] }
+        rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] },
+        pkFieldName: string = 'id',
+        pkFieldType: string = 'Long'
     ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const className = this.toPascalCase(resource) + 'Repository';
@@ -705,7 +729,9 @@ export class SpringBootGenerator {
             className,
             entityName: this.toPascalCase(resource),
             resourceName: resource,
-            parentRelationships: parentRelationships.length > 0 ? parentRelationships : undefined
+            parentRelationships: parentRelationships.length > 0 ? parentRelationships : undefined,
+            pkFieldName,
+            pkFieldType
         });
 
         const filePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'repository', `${className}.java`);
@@ -842,6 +868,27 @@ export class SpringBootGenerator {
             name: this.pascalToCamelCase(field.name)
         }));
 
+        // Detect PK field from schema metadata
+        // Priority: 1) readOnly field, 2) field ending with 'Id' or 'Code' (common PK patterns)
+        let pkField = fields.find(f => f.readOnly === true);
+        if (!pkField) {
+            pkField = fields.find(f => {
+                const lower = f.name.toLowerCase();
+                return lower.endsWith('id') || lower.endsWith('code');
+            });
+        }
+
+        // PK metadata for templates
+        const pkFieldName = pkField ? pkField.name : 'id';
+        const pkFieldType = pkField ? pkField.type : 'Long';
+        const pkColumnName = pkField ? (pkField.columnName || pkField.name) : 'id';
+        const pkIsGenerated = pkFieldType === 'Long' || pkFieldType === 'Integer';
+
+        // Remove PK field from regular fields list to avoid duplicate declaration in Entity
+        if (pkField) {
+            fields = fields.filter(f => f.name !== pkField!.name);
+        }
+
         // Enrich fields with relationship annotations
         const entityFields = this.enrichFieldsWithRelationships(fields, entityName, rels);
 
@@ -859,7 +906,11 @@ export class SpringBootGenerator {
             resourceName: resource,
             fields: entityFields,
             entityName: entityName,
-            imports: entityImports.join('\n')
+            imports: entityImports.join('\n'),
+            pkFieldName,
+            pkFieldType,
+            pkColumnName,
+            pkIsGenerated
         });
         const entityPath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'entity', `${entityName}.java`);
         await fs.promises.mkdir(path.dirname(entityPath), { recursive: true });
@@ -871,6 +922,7 @@ export class SpringBootGenerator {
         const requestContent = requestCompiled({
             packageName: config.packageName,
             className: entityName + 'Request',
+            entityName: entityName,
             resourceName: resource,
             fields,
             imports: imports.join('\n')
@@ -913,7 +965,11 @@ export class SpringBootGenerator {
             resourceName: resource,
             fields,
             childCollections: childCollections.length > 0 ? childCollections : undefined,
-            imports: responseImports.join('\n')
+            imports: responseImports.join('\n'),
+            pkFieldName,
+            pkFieldType,
+            pkColumnName,
+            pkIsGenerated
         });
         const responsePath = path.join(projectPath, 'src', 'main', 'java', packagePath, 'dto', `${entityName}Response.java`);
         await fs.promises.mkdir(path.dirname(responsePath), { recursive: true });
@@ -1092,7 +1148,8 @@ export class SpringBootGenerator {
                 maximum: prop.maximum ?? null,
                 enumValues: Array.isArray(prop.enum) ? prop.enum : null,
                 isEmail: prop.format === 'email',
-                isPositive: prop.minimum !== undefined && prop.minimum > 0 && prop.exclusiveMinimum === true
+                isPositive: prop.minimum !== undefined && prop.minimum > 0 && prop.exclusiveMinimum === true,
+                readOnly: prop.readOnly === true
             });
         }
 
@@ -1305,8 +1362,22 @@ export class SpringBootGenerator {
             const rels = this.entityRelationships[entityName] 
                 || this.entityRelationships[singularName] 
                 || { manyToOne: [], oneToMany: [] };
-            await this.generateControllerTest(projectPath, config, resource, schema, rels);
-            await this.generateServiceTest(projectPath, config, resource, schema);
+
+            // PK detection for test generation
+            let testFields = schema?.fields || [];
+            testFields = testFields.map((f: any) => ({ ...f, name: this.pascalToCamelCase(f.name) }));
+            let testPkField = testFields.find((f: any) => f.readOnly === true);
+            if (!testPkField) {
+                testPkField = testFields.find((f: any) => {
+                    const lower = f.name.toLowerCase();
+                    return lower.endsWith('id') || lower.endsWith('code');
+                });
+            }
+            const testPkFieldName = testPkField ? testPkField.name : 'id';
+            const testPkFieldType = testPkField ? testPkField.type : 'Long';
+
+            await this.generateControllerTest(projectPath, config, resource, schema, rels, testPkFieldName, testPkFieldType);
+            await this.generateServiceTest(projectPath, config, resource, schema, testPkFieldName, testPkFieldType);
         }
     }
 
@@ -1381,7 +1452,9 @@ export class SpringBootGenerator {
         config: SpringBootProjectConfig, 
         resource: string, 
         schema?: any,
-        rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] }
+        rels: { manyToOne: RelationshipInfo[]; oneToMany: RelationshipInfo[] } = { manyToOne: [], oneToMany: [] },
+        pkFieldName: string = 'id',
+        pkFieldType: string = 'Long'
     ): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const entityName = this.toPascalCase(resource);
@@ -1436,7 +1509,9 @@ export class SpringBootGenerator {
             resourceName: resource,
             serviceName: entityName + 'Service',
             fields,
-            childServices: childServices.length > 0 ? childServices : undefined
+            childServices: childServices.length > 0 ? childServices : undefined,
+            pkFieldName,
+            pkFieldType
         });
 
         const testDir = path.join(projectPath, 'src', 'test', 'java', packagePath, 'controller');
@@ -1445,7 +1520,7 @@ export class SpringBootGenerator {
         await fs.promises.writeFile(filePath, content, 'utf-8');
     }
 
-    private async generateServiceTest(projectPath: string, config: SpringBootProjectConfig, resource: string, schema?: any): Promise<void> {
+    private async generateServiceTest(projectPath: string, config: SpringBootProjectConfig, resource: string, schema?: any, pkFieldName: string = 'id', pkFieldType: string = 'Long'): Promise<void> {
         const packagePath = config.packageName.replace(/\./g, '/');
         const entityName = this.toPascalCase(resource);
         const className = entityName + 'ServiceTest';
@@ -1480,7 +1555,9 @@ export class SpringBootGenerator {
             entityName: entityName,
             resourceName: resource,
             repositoryName: entityName + 'Repository',
-            fields
+            fields,
+            pkFieldName,
+            pkFieldType
         });
 
         const testDir = path.join(projectPath, 'src', 'test', 'java', packagePath, 'service');

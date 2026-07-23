@@ -28,6 +28,10 @@ const testScenarios = [
             entityName: 'User',
             resourceName: 'users',
             repositoryName: 'UserRepository',
+            pkFieldName: 'id',
+            pkFieldType: 'Long',
+            pkColumnName: 'id',
+            pkIsGenerated: true,
             fields: [
                 { name: 'name', type: 'String' },
                 { name: 'email', type: 'String' }
@@ -45,6 +49,10 @@ const testScenarios = [
             serviceName: 'UserService',
             entityName: 'User',
             resourceName: 'users',
+            pkFieldName: 'id',
+            pkFieldType: 'Long',
+            pkColumnName: 'id',
+            pkIsGenerated: true,
             fields: [
                 { name: 'name', type: 'String' },
                 { name: 'email', type: 'String' }
@@ -62,6 +70,10 @@ const testScenarios = [
             entityName: 'ProposalStatusTypeMappings',
             resourceName: 'proposalStatusTypeMappings',
             repositoryName: 'ProposalStatusTypeMappingsRepository',
+            pkFieldName: 'proposalStatusTypeMappingId',
+            pkFieldType: 'Long',
+            pkColumnName: 'ProposalStatusTypeMappingId',
+            pkIsGenerated: true,
             fields: [
                 { name: 'name', type: 'String' },
                 { name: 'description', type: 'String' }
@@ -158,6 +170,7 @@ function validateTemplate(scenario) {
         console.log(`   Template variables: ${uniqueVars.join(', ')}`);
         console.log(`   Generator provides: ${dataKeys.join(', ')}`);
         
+        let hasErrors = false;
         const missingParams = uniqueVars.filter(v => !dataKeys.includes(v));
         if (missingParams.length > 0) {
             console.log(`   ❌ MISSING PARAMETERS: ${missingParams.join(', ')}`);
@@ -175,7 +188,6 @@ function validateTemplate(scenario) {
 
         // Run validation rules
         console.log('\n3. Running validation rules...');
-        let hasErrors = false;
 
         for (const rule of validationRules) {
             if (rule.pattern) {

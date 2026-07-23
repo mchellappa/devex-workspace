@@ -203,7 +203,7 @@ public class {{className}} {
     })
     public ResponseEntity<{{entityName}}Response> getById(
             @RequestHeader(value = "X-B3-Trace-Id", required = false) String traceId,
-            @PathVariable Long id) {
+            @PathVariable {{pkFieldType}} id) {
         log.debug("GET /{{resourceName}}/{}", id);
         HttpHeaders stdHeaders = buildResponseHeaders(traceId);
         return {{camelCase serviceName}}.getById(id)
@@ -286,7 +286,7 @@ public class {{className}} {
     })
     public ResponseEntity<{{entityName}}Response> update(
             @RequestHeader(value = "X-B3-Trace-Id", required = false) String traceId,
-            @PathVariable Long id,
+            @PathVariable {{pkFieldType}} id,
             @Valid @RequestBody {{entityName}}Request request
     ) {
         log.info("PUT /{{resourceName}}/{} - updating {{resourceName}}", id);
@@ -320,7 +320,7 @@ public class {{className}} {
     })
     public ResponseEntity<Void> delete(
             @RequestHeader(value = "X-B3-Trace-Id", required = false) String traceId,
-            @PathVariable Long id) {
+            @PathVariable {{pkFieldType}} id) {
         log.info("DELETE /{{resourceName}}/{}", id);
         {{camelCase serviceName}}.delete(id);
         log.info("Successfully deleted {{resourceName}} with id: {}", id);

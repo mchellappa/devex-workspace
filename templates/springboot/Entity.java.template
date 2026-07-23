@@ -61,12 +61,16 @@ public class {{className}} implements Serializable {
 
     /**
      * Primary key for the {{entityName}} entity.
+     {{#if pkIsGenerated}}
      * Auto-generated using database identity column.
+     {{/if}}
      */
     @Id
+    {{#if pkIsGenerated}}
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id", nullable = false, updatable = false)
-    private Long id;
+    {{/if}}
+    @Column(name = "{{pkColumnName}}", nullable = false, updatable = false)
+    private {{pkFieldType}} {{pkFieldName}};
 
     {{#each fields}}
     {{#if isManyToOne}}

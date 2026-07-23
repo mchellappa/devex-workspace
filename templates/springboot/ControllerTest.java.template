@@ -83,7 +83,7 @@ class {{className}} {
                 .build();
 
         testResponse = {{entityName}}Response.builder()
-                .id(1L)
+                .{{pkFieldName}}({{#if (eq pkFieldType "String")}}"PK1"{{else if (eq pkFieldType "Integer")}}1{{else}}1L{{/if}})
                 {{#each fields}}
                 .{{name}}({{#if (eq type "String")}}"test{{pascalCase name}}"{{else if (eq type "Integer")}}1{{else if (eq type "Long")}}1L{{else if (eq type "Double")}}1.0{{else if (eq type "BigDecimal")}}new java.math.BigDecimal("1.0"){{else if (eq type "Boolean")}}true{{else if (startsWith type "List<")}}java.util.Collections.emptyList(){{else if (startsWith type "Set<")}}java.util.Collections.emptySet(){{else if (startsWith type "Map<")}}java.util.Collections.emptyMap(){{else if (startsWith type "LocalDateTime")}}java.time.LocalDateTime.now(){{else if (startsWith type "LocalDate")}}java.time.LocalDate.now(){{else}}null{{/if}})
                 {{/each}}
@@ -91,7 +91,7 @@ class {{className}} {
 
         testResponseList = Arrays.asList(
                 testResponse,
-                {{entityName}}Response.builder().id(2L).build()
+                {{entityName}}Response.builder().{{pkFieldName}}({{#if (eq pkFieldType "String")}}"PK2"{{else if (eq pkFieldType "Integer")}}2{{else}}2L{{/if}}).build()
         );
     }
 
@@ -104,7 +104,7 @@ class {{className}} {
         mockMvc.perform(get("/{{resourceName}}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.value", hasSize(2)))
-                .andExpect(jsonPath("$.value[0].id", is(1)));
+                .andExpect(jsonPath("$.value[0].{{pkFieldName}}", is({{#if (eq pkFieldType "String")}}"PK1"{{else}}1{{/if}})));
 
         verify({{camelCase serviceName}}, times(1)).findAll(ArgumentMatchers.any(ODataQueryOptions.class));
     }
@@ -129,24 +129,24 @@ class {{className}} {
     @Test
     @DisplayName("getById: existing id → returns entity")
     void getById_existingId_returnsEntity() throws Exception {
-        when({{camelCase serviceName}}.getById(1L)).thenReturn(Optional.of(testResponse));
+        when({{camelCase serviceName}}.getById({{#if (eq pkFieldType "String")}}"PK1"{{else if (eq pkFieldType "Integer")}}1{{else}}1L{{/if}})).thenReturn(Optional.of(testResponse));
 
-        mockMvc.perform(get("/{{resourceName}}/1"))
+        mockMvc.perform(get("/{{resourceName}}/{{#if (eq pkFieldType "String")}}PK1{{else}}1{{/if}}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id", is(1)));
+                .andExpect(jsonPath("$.{{pkFieldName}}", is({{#if (eq pkFieldType "String")}}"PK1"{{else}}1{{/if}})));
 
-        verify({{camelCase serviceName}}, times(1)).getById(1L);
+        verify({{camelCase serviceName}}, times(1)).getById({{#if (eq pkFieldType "String")}}"PK1"{{else if (eq pkFieldType "Integer")}}1{{else}}1L{{/if}});
     }
 
     @Test
     @DisplayName("getById: unknown id → 404 Not Found")
     void getById_unknownId_returns404() throws Exception {
-        when({{camelCase serviceName}}.getById(999L)).thenReturn(Optional.empty());
+        when({{camelCase serviceName}}.getById({{#if (eq pkFieldType "String")}}"PK999"{{else if (eq pkFieldType "Integer")}}999{{else}}999L{{/if}})).thenReturn(Optional.empty());
 
-        mockMvc.perform(get("/{{resourceName}}/999"))
+        mockMvc.perform(get("/{{resourceName}}/{{#if (eq pkFieldType "String")}}PK999{{else}}999{{/if}}"))
                 .andExpect(status().isNotFound());
 
-        verify({{camelCase serviceName}}, times(1)).getById(999L);
+        verify({{camelCase serviceName}}, times(1)).getById({{#if (eq pkFieldType "String")}}"PK999"{{else if (eq pkFieldType "Integer")}}999{{else}}999L{{/if}});
     }
 
     @Test
@@ -158,7 +158,7 @@ class {{className}} {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(testRequest)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id", is(1)));
+                .andExpect(jsonPath("$.{{pkFieldName}}", is({{#if (eq pkFieldType "String")}}"PK1"{{else}}1{{/if}})));
 
         verify({{camelCase serviceName}}, times(1)).create(ArgumentMatchers.any({{entityName}}Request.class));
     }
@@ -166,51 +166,51 @@ class {{className}} {
     @Test
     @DisplayName("update: existing id → returns updated entity")
     void update_existingId_returnsUpdatedEntity() throws Exception {
-        when({{camelCase serviceName}}.update(ArgumentMatchers.eq(1L), ArgumentMatchers.any({{entityName}}Request.class))).thenReturn(testResponse);
+        when({{camelCase serviceName}}.update(ArgumentMatchers.eq({{#if (eq pkFieldType "String")}}"PK1"{{else if (eq pkFieldType "Integer")}}1{{else}}1L{{/if}}), ArgumentMatchers.any({{entityName}}Request.class))).thenReturn(testResponse);
 
-        mockMvc.perform(put("/{{resourceName}}/1")
+        mockMvc.perform(put("/{{resourceName}}/{{#if (eq pkFieldType "String")}}PK1{{else}}1{{/if}}")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(testRequest)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id", is(1)));
+                .andExpect(jsonPath("$.{{pkFieldName}}", is({{#if (eq pkFieldType "String")}}"PK1"{{else}}1{{/if}})));
 
-        verify({{camelCase serviceName}}, times(1)).update(ArgumentMatchers.eq(1L), ArgumentMatchers.any({{entityName}}Request.class));
+        verify({{camelCase serviceName}}, times(1)).update(ArgumentMatchers.eq({{#if (eq pkFieldType "String")}}"PK1"{{else if (eq pkFieldType "Integer")}}1{{else}}1L{{/if}}), ArgumentMatchers.any({{entityName}}Request.class));
     }
 
     @Test
     @DisplayName("update: unknown id → 404 Not Found")
     void update_unknownId_returns404() throws Exception {
-        when({{camelCase serviceName}}.update(ArgumentMatchers.eq(999L), ArgumentMatchers.any({{entityName}}Request.class)))
-                .thenThrow(new ResourceNotFoundException("{{entityName}}", "id", 999L));
+        when({{camelCase serviceName}}.update(ArgumentMatchers.eq({{#if (eq pkFieldType "String")}}"PK999"{{else if (eq pkFieldType "Integer")}}999{{else}}999L{{/if}}), ArgumentMatchers.any({{entityName}}Request.class)))
+                .thenThrow(new ResourceNotFoundException("{{entityName}}", "{{pkFieldName}}", {{#if (eq pkFieldType "String")}}"PK999"{{else if (eq pkFieldType "Integer")}}999{{else}}999L{{/if}}));
 
-        mockMvc.perform(put("/{{resourceName}}/999")
+        mockMvc.perform(put("/{{resourceName}}/{{#if (eq pkFieldType "String")}}PK999{{else}}999{{/if}}")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(testRequest)))
                 .andExpect(status().isNotFound());
 
-        verify({{camelCase serviceName}}, times(1)).update(ArgumentMatchers.eq(999L), ArgumentMatchers.any({{entityName}}Request.class));
+        verify({{camelCase serviceName}}, times(1)).update(ArgumentMatchers.eq({{#if (eq pkFieldType "String")}}"PK999"{{else if (eq pkFieldType "Integer")}}999{{else}}999L{{/if}}), ArgumentMatchers.any({{entityName}}Request.class));
     }
 
     @Test
     @DisplayName("delete: existing id → 204 No Content")
     void delete_existingId_returns204() throws Exception {
-        doNothing().when({{camelCase serviceName}}).delete(1L);
+        doNothing().when({{camelCase serviceName}}).delete({{#if (eq pkFieldType "String")}}"PK1"{{else if (eq pkFieldType "Integer")}}1{{else}}1L{{/if}});
 
-        mockMvc.perform(delete("/{{resourceName}}/1"))
+        mockMvc.perform(delete("/{{resourceName}}/{{#if (eq pkFieldType "String")}}PK1{{else}}1{{/if}}"))
                 .andExpect(status().isNoContent());
 
-        verify({{camelCase serviceName}}, times(1)).delete(1L);
+        verify({{camelCase serviceName}}, times(1)).delete({{#if (eq pkFieldType "String")}}"PK1"{{else if (eq pkFieldType "Integer")}}1{{else}}1L{{/if}});
     }
 
     @Test
     @DisplayName("delete: unknown id → 404 Not Found")
     void delete_unknownId_returns404() throws Exception {
-        doThrow(new ResourceNotFoundException("{{entityName}}", "id", 999L))
-                .when({{camelCase serviceName}}).delete(999L);
+        doThrow(new ResourceNotFoundException("{{entityName}}", "{{pkFieldName}}", {{#if (eq pkFieldType "String")}}"PK999"{{else if (eq pkFieldType "Integer")}}999{{else}}999L{{/if}}))
+                .when({{camelCase serviceName}}).delete({{#if (eq pkFieldType "String")}}"PK999"{{else if (eq pkFieldType "Integer")}}999{{else}}999L{{/if}});
 
-        mockMvc.perform(delete("/{{resourceName}}/999"))
+        mockMvc.perform(delete("/{{resourceName}}/{{#if (eq pkFieldType "String")}}PK999{{else}}999{{/if}}"))
                 .andExpect(status().isNotFound());
 
-        verify({{camelCase serviceName}}, times(1)).delete(999L);
+        verify({{camelCase serviceName}}, times(1)).delete({{#if (eq pkFieldType "String")}}"PK999"{{else if (eq pkFieldType "Integer")}}999{{else}}999L{{/if}});
     }
 }
