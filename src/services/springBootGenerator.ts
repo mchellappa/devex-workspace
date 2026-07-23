@@ -360,17 +360,32 @@ export class SpringBootGenerator {
             }
         }
 
-        // Build entity name map: resolved class name -> original Mermaid name
-        // e.g., "TCrOdsPlan" -> "T_CR_ODS_Plan"
+        // Build entity name map: multiple keys -> original Mermaid name
+        // Keys include both the resolved class name AND the prefix-stripped PascalCase name
+        // so lookups from toPascalCase(resource) will match even when the LLM stripped the prefix
+        // e.g., "ParticipantAccounts" -> "T_CR_ODS_ParticipantAccount"
         this.mermaidEntityMap.clear();
         for (const rel of relationships) {
-            const sourceResolved = this.resolveEntityToClassName(rel.sourceEntity);
-            if (!this.mermaidEntityMap.has(sourceResolved)) {
-                this.mermaidEntityMap.set(sourceResolved, rel.sourceEntity);
-            }
-            const targetResolved = this.resolveEntityToClassName(rel.targetEntity);
-            if (!this.mermaidEntityMap.has(targetResolved)) {
-                this.mermaidEntityMap.set(targetResolved, rel.targetEntity);
+            for (const mermaidName of [rel.sourceEntity, rel.targetEntity]) {
+                const resolved = this.resolveEntityToClassName(mermaidName);
+                if (!this.mermaidEntityMap.has(resolved)) {
+                    this.mermaidEntityMap.set(resolved, mermaidName);
+                }
+                // Also store with the prefix-stripped PascalCase as key
+                // e.g., "T_CR_ODS_Plan" -> stripped "Plan" -> toPascalCase -> "Plan"
+                const stripped = this.stripTablePrefix(mermaidName);
+                if (stripped !== mermaidName) {
+                    const strippedPascal = this.toPascalCase(stripped);
+                    if (!this.mermaidEntityMap.has(strippedPascal)) {
+                        this.mermaidEntityMap.set(strippedPascal, mermaidName);
+                    }
+                    // Also try plural form since OpenAPI resources are plural
+                    // e.g., "Plan" -> "Plans" from toPascalCase("plans")
+                    const strippedPlural = this.toPascalCase(stripped) + 's';
+                    if (!this.mermaidEntityMap.has(strippedPlural)) {
+                        this.mermaidEntityMap.set(strippedPlural, mermaidName);
+                    }
+                }
             }
         }
         logger.info(`Mermaid entity map: ${JSON.stringify(Object.fromEntries(this.mermaidEntityMap))}`);
@@ -818,6 +833,13 @@ export class SpringBootGenerator {
             logger.warn(`No schema found for ${entityName}, using default fields`);
         }
         
+        // Ensure every field has a columnName for @Column annotation
+        // The columnName preserves the original field name from the data model (Mermaid/OpenAPI)
+        fields = fields.map(field => ({
+            ...field,
+            columnName: field.columnName || field.name
+        }));
+
         // Enrich fields with relationship annotations
         const entityFields = this.enrichFieldsWithRelationships(fields, entityName, rels);
 
@@ -1444,8 +1466,22 @@ export class SpringBootGenerator {
      * 
      * This method bridges that gap by mapping the Mermaid entity name to the resource-based class name.
      */
+    /**
+     * Strips common database table prefixes (e.g., "T_CR_ODS_") from entity names.
+     * These prefixes are database naming conventions that the LLM strips when generating
+     * OpenAPI paths, so we need to strip them for matching.
+     * Pattern: one or more segments of uppercase letters/digits followed by underscore.
+     * e.g., "T_CR_ODS_ParticipantAccount" → "ParticipantAccount"
+     */
+    private stripTablePrefix(entityName: string): string {
+        // Match prefixes like "T_", "CR_", "ODS_" — sequences of uppercase+digits followed by _
+        // Stop when we hit a segment that contains lowercase (that's the actual entity name)
+        const stripped = entityName.replace(/^([A-Z][A-Z0-9]*_)+/, '');
+        return stripped || entityName; // If stripping removes everything, return original
+    }
+
     private resolveEntityToClassName(mermaidEntityName: string): string {
-        // Lowercase and remove any non-alpha characters for lookup
+        // First try direct lookup (lowercase, no separators)
         const lookupKey = mermaidEntityName.toLowerCase().replace(/[-_\s]/g, '');
         const resource = this.resourceNameMap.get(lookupKey);
         if (resource) {
@@ -1455,6 +1491,19 @@ export class SpringBootGenerator {
             }
             return resolved;
         }
+
+        // Try again with table prefix stripped (e.g., "T_CR_ODS_ParticipantAccount" → "participantaccount")
+        const stripped = this.stripTablePrefix(mermaidEntityName);
+        if (stripped !== mermaidEntityName) {
+            const strippedKey = stripped.toLowerCase().replace(/[-_\s]/g, '');
+            const strippedResource = this.resourceNameMap.get(strippedKey);
+            if (strippedResource) {
+                const resolved = this.toPascalCase(strippedResource);
+                logger.info(`Resolved Mermaid entity "${mermaidEntityName}" → class "${resolved}" (via prefix-stripped lookup "${strippedKey}")`);
+                return resolved;
+            }
+        }
+
         // Fallback: return as-is (already PascalCase from Mermaid)
         logger.debug(`No resource mapping for "${mermaidEntityName}", using as-is`);
         return mermaidEntityName;
@@ -1562,8 +1611,12 @@ export class SpringBootGenerator {
             const matchingManyToOne = rels.manyToOne.find(r => {
                 const targetNorm = r.targetEntity.toLowerCase().replace(/[-_]/g, '');
                 const fieldNorm = field.name.toLowerCase().replace(/[-_]/g, '');
+                // Also try with table prefix stripped (e.g., "T_CR_ODS_Party" → "party")
+                const strippedNorm = this.stripTablePrefix(r.targetEntity).toLowerCase().replace(/[-_]/g, '');
                 return fieldNorm === targetNorm + 'id'
-                    || fieldNorm === targetNorm;
+                    || fieldNorm === targetNorm
+                    || fieldNorm === strippedNorm + 'id'
+                    || fieldNorm === strippedNorm;
             });
 
             if (matchingManyToOne) {

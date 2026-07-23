@@ -100,7 +100,9 @@ public class {{className}} implements Serializable {
      */
     {{#if isMap}}
     @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
-    @Column(columnDefinition = "TEXT")
+    @Column(name = "{{columnName}}", columnDefinition = "TEXT")
+    {{else}}
+    @Column(name = "{{columnName}}")
     {{/if}}
     private {{{type}}} {{name}};
     {{/if}}

@@ -608,7 +608,7 @@ Format the review in markdown, use emojis for visual clarity, and be specific wi
 - Proper status codes (200, 201, 400, 401, 403, 404, 500, etc.)
 - Comprehensive schema definitions with validation rules
 - Clear descriptions for all endpoints, parameters, and responses
-- Naming conventions: kebab-case for URL path segments; snake_case for ALL schema properties, request/response body fields, query parameter names, and entity attributes. Java field names remain camelCase internally but MUST be annotated with @JsonProperty using the snake_case equivalent name.
+- Naming conventions: kebab-case for URL path segments. For schema properties and entity attributes: PRESERVE the EXACT column/field names from the source data model (Mermaid ERD, CSV, or LLD) — do NOT convert to snake_case. If the source uses PascalCase (e.g., ParticipantAccountId, PartyId), keep PascalCase. If the source uses snake_case (e.g., party_role_id), keep snake_case. The goal is that schema property names match the physical database column names exactly.
 - Schema naming: Use SINGULAR PascalCase names for all schemas in components/schemas (e.g., Party, Person, PartyRole — NOT Parties, Persons, PartyRoles). Schema names MUST match the original entity names exactly as they appear in the data model. URL paths remain plural (e.g., /api/v1/parties for the Party schema).
 - Include common headers and error responses
 - Security schemes when appropriate (Bearer, OAuth2, API Key)
@@ -736,7 +736,7 @@ ${isLargeDomain ? '' : `
    - Appropriate tags for grouping`}
 4. For each schema include:
    - ALL properties/fields from the source data model (Mermaid ERD, CSV, or LLD) — do NOT summarize or skip fields
-   - ALL property names MUST use snake_case (e.g., party_type_code, created_date, rk_customer_id)
+   - ALL property names MUST match the EXACT column/field names from the source data model — preserve original casing (PascalCase, snake_case, or whatever the source uses)
    - Correct OpenAPI types mapped from source types (bigint->integer/int64, varchar->string, bit->boolean, date->string/date, datetime->string/date-time, timestamp->string/date-time, nvarchar->string)
    - Required fields (non-nullable fields)${isLargeDomain ? '' : `
    - Validation rules (minLength, maxLength from varchar(N), pattern, minimum, maximum, enum)
