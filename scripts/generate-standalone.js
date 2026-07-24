@@ -18,17 +18,44 @@ const { TemplateProvider } = require('../out/services/templateProvider');
 // ============================================================
 // CONFIGURATION
 // ============================================================
-const OPENAPI_PATH = path.resolve('C:\\Users\\chellmu\\.devex\\swift-ods\\openapi\\participant-api.yaml');
-const MERMAID_PATH = path.resolve('C:\\Workspace\\github\\mfc_gwam\\crt-ods-participant-api\\docs\\datamodels\\participant.mermaid');
-const OUTPUT_DIR = path.resolve('C:\\Workspace\\github\\mfc_gwam\\crt-ods-participant-api');
+// Parse domain from command line: node generate-standalone.js [domain]
+// Defaults to 'participant' if not specified
+const DOMAIN = process.argv[2] || 'participant';
 const EXTENSION_PATH = path.resolve(__dirname, '..');
+
+const DOMAIN_CONFIGS = {
+    'participant': {
+        openapiPath: 'C:\\Users\\chellmu\\.devex\\swift-ods\\openapi\\participant-api.yaml',
+        mermaidPath: 'C:\\Workspace\\github\\mfc_gwam\\crt-ods-participant-api\\docs\\datamodels\\participant.mermaid',
+        outputDir: 'C:\\Workspace\\github\\mfc_gwam\\crt-ods-participant-api',
+        projectName: 'crttin-participant',
+        packageName: 'com.manulife.crttin.ods.participant',
+    },
+    'party': {
+        openapiPath: 'C:\\Users\\chellmu\\.devex\\swift-ods\\openapi\\party-api.yaml',
+        mermaidPath: 'C:\\Workspace\\github\\mfc_gwam\\crt-ods-party-api\\docs\\datamodels\\party.mermaid',
+        outputDir: 'C:\\Workspace\\github\\mfc_gwam\\crt-ods-party-api',
+        projectName: 'crttin-party',
+        packageName: 'com.manulife.crttin.ods.party',
+    }
+};
+
+const domainConfig = DOMAIN_CONFIGS[DOMAIN];
+if (!domainConfig) {
+    console.error(`Unknown domain: ${DOMAIN}. Available: ${Object.keys(DOMAIN_CONFIGS).join(', ')}`);
+    process.exit(1);
+}
+
+const OPENAPI_PATH = path.resolve(domainConfig.openapiPath);
+const MERMAID_PATH = path.resolve(domainConfig.mermaidPath);
+const OUTPUT_DIR = path.resolve(domainConfig.outputDir);
 
 const PROJECT_CONFIG = {
     targetDirectory: OUTPUT_DIR,
-    projectName: 'crttin-participant',
-    packageName: 'com.manulife.crttin.ods.participant',
+    projectName: domainConfig.projectName,
+    packageName: domainConfig.packageName,
     groupId: 'com.manulife.crttin.ods',
-    artifactId: 'crttin-participant',
+    artifactId: domainConfig.projectName,
     javaVersion: '21',
     springBootVersion: '3.4.1',
     buildTool: 'maven'
@@ -48,28 +75,68 @@ function parseMermaidRelationships(mermaidContent) {
         }
 
         // Match relationship lines like:
-        // T_CR_ODS_ParticipantStatus ||--o{ T_CR_ODS_ParticipantAccount : ParticipantStatusCode
-        const relMatch = trimmed.match(/^(\S+)\s+(\|\|--o\{|\}o--\|\||--\|\{|\|\|--\|\||--o\{|o\{--\|\|)\s+(\S+)\s*:\s*(.+)$/);
+        // Party ||--o{ PartyRole : PartyID
+        // PartyRemark o{--|| Party : PartyID
+        // Party ||--o| Person : PartyID
+        // Sponsor o|--o{ SponsorGroup : SponsorId
+        // Mermaid cardinality markers: || (exactly one), o| (zero or one), o{ (zero or more), |{ (one or more)
+        const relMatch = trimmed.match(/^(\S+)\s+([|o}{]+-{2}[|o}{]+)\s+(\S+)\s*:\s*(.+)$/);
         if (relMatch) {
-            const [, source, relType, target, label] = relMatch;
+            const [, leftEntity, relNotation, rightEntity, label] = relMatch;
             
-            // ||--o{ means "one to many" (source is the "one" side, target is the "many" side)
-            // So source has OneToMany to target, and target has ManyToOne to source
-            let type;
-            if (relType === '||--o{' || relType === '}o--||') {
-                type = 'OneToMany';
-            } else if (relType === '||--||') {
-                type = 'OneToOne';
-            } else {
-                type = 'OneToMany'; // default
-            }
+            // Determine cardinality from notation
+            const leftCard = relNotation.split('--')[0];
+            const rightCard = relNotation.split('--')[1];
+            const isMany = (card) => /[{]/.test(card);
+            const leftIsMany = isMany(leftCard);
+            const rightIsMany = isMany(rightCard);
 
-            relationships.push({
-                sourceEntity: source,
-                targetEntity: target,
-                type: type,
-                label: label.trim()
-            });
+            if (!leftIsMany && rightIsMany) {
+                // OneToMany: left is "one", right is "many"
+                // Produce BOTH directions (matching VS Code flow)
+                relationships.push({
+                    sourceEntity: rightEntity,
+                    targetEntity: leftEntity,
+                    type: 'ManyToOne',
+                    label: label.trim()
+                });
+                relationships.push({
+                    sourceEntity: leftEntity,
+                    targetEntity: rightEntity,
+                    type: 'OneToMany',
+                    label: label.trim()
+                });
+            } else if (leftIsMany && !rightIsMany) {
+                // ManyToOne: left is "many", right is "one"
+                relationships.push({
+                    sourceEntity: leftEntity,
+                    targetEntity: rightEntity,
+                    type: 'ManyToOne',
+                    label: label.trim()
+                });
+                relationships.push({
+                    sourceEntity: rightEntity,
+                    targetEntity: leftEntity,
+                    type: 'OneToMany',
+                    label: label.trim()
+                });
+            } else if (!leftIsMany && !rightIsMany) {
+                // OneToOne
+                relationships.push({
+                    sourceEntity: leftEntity,
+                    targetEntity: rightEntity,
+                    type: 'OneToOne',
+                    label: label.trim()
+                });
+            } else {
+                // ManyToMany (rare)
+                relationships.push({
+                    sourceEntity: leftEntity,
+                    targetEntity: rightEntity,
+                    type: 'ManyToMany',
+                    label: label.trim()
+                });
+            }
         }
     }
 

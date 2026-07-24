@@ -61,14 +61,14 @@ class {{className}} {
 
         testRequest = {{entityName}}Request.builder()
                 {{#each fields}}
-                .{{name}}({{#if (eq type "String")}}"test{{pascalCase name}}"{{else if (eq type "Integer")}}1{{else if (eq type "Long")}}1L{{else if (eq type "Boolean")}}true{{else}}null{{/if}})
+                .{{name}}({{#if (eq type "String")}}{{testString name maxLength}}{{else if (eq type "Integer")}}1{{else if (eq type "Long")}}1L{{else if (eq type "Boolean")}}true{{else}}null{{/if}})
                 {{/each}}
                 .build();
 
         testResponse = {{entityName}}Response.builder()
                 .{{pkFieldName}}({{#if (eq pkFieldType "String")}}"PK1"{{else if (eq pkFieldType "Integer")}}1{{else}}1L{{/if}})
                 {{#each fields}}
-                .{{name}}({{#if (eq type "String")}}"test{{pascalCase name}}"{{else if (eq type "Integer")}}1{{else if (eq type "Long")}}1L{{else if (eq type "Boolean")}}true{{else}}null{{/if}})
+                .{{name}}({{#if (eq type "String")}}{{testString name maxLength}}{{else if (eq type "Integer")}}1{{else if (eq type "Long")}}1L{{else if (eq type "Boolean")}}true{{else}}null{{/if}})
                 {{/each}}
                 .build();
     }

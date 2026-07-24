@@ -69,6 +69,35 @@ Handlebars.registerHelper('join', function(arr: any, separator: string) {
     return arr.join(typeof separator === 'string' ? separator : ',');
 });
 
+// Helper to generate a test string value that respects @Size(max=N) constraints.
+// Usage: {{testString name maxLength}} → produces a string that fits within maxLength.
+// If maxLength is null/undefined, produces "test<PascalCaseName>".
+// If maxLength is very small (1-3), produces "X", "XX", or "XXX".
+Handlebars.registerHelper('testString', function(fieldName: any, maxLength: any) {
+    if (!fieldName || typeof fieldName !== 'string') {
+        return new Handlebars.SafeString('"test"');
+    }
+    const pascalName = fieldName.charAt(0).toUpperCase() + fieldName.slice(1);
+    const defaultValue = `test${pascalName}`;
+    
+    // If no maxLength constraint, use the default
+    if (maxLength === null || maxLength === undefined || typeof maxLength !== 'number') {
+        return new Handlebars.SafeString(`"${defaultValue}"`);
+    }
+    
+    // If the default value fits within maxLength, use it
+    if (defaultValue.length <= maxLength) {
+        return new Handlebars.SafeString(`"${defaultValue}"`);
+    }
+    
+    // Otherwise, truncate to fit
+    if (maxLength <= 0) {
+        return new Handlebars.SafeString('""');
+    }
+    const truncated = defaultValue.substring(0, maxLength);
+    return new Handlebars.SafeString(`"${truncated}"`);
+});
+
 // Helper for proper HTTP method annotation capitalization
 // GET -> GetMapping, POST -> PostMapping, etc.
 Handlebars.registerHelper('methodMapping', function(method: string) {

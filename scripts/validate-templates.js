@@ -15,6 +15,26 @@ Handlebars.registerHelper('pascalCase', (str) => {
 
 Handlebars.registerHelper('eq', (a, b) => a === b);
 
+Handlebars.registerHelper('startsWith', (str, prefix) => {
+    if (!str || typeof str !== 'string') return false;
+    if (!prefix || typeof prefix !== 'string') return false;
+    return str.startsWith(prefix);
+});
+
+Handlebars.registerHelper('testString', (fieldName, maxLength) => {
+    if (!fieldName || typeof fieldName !== 'string') return new Handlebars.SafeString('"test"');
+    const pascalName = fieldName.charAt(0).toUpperCase() + fieldName.slice(1);
+    const defaultValue = `test${pascalName}`;
+    if (maxLength === null || maxLength === undefined || typeof maxLength !== 'number') {
+        return new Handlebars.SafeString(`"${defaultValue}"`);
+    }
+    if (defaultValue.length <= maxLength) {
+        return new Handlebars.SafeString(`"${defaultValue}"`);
+    }
+    if (maxLength <= 0) return new Handlebars.SafeString('""');
+    return new Handlebars.SafeString(`"${defaultValue.substring(0, maxLength)}"`);
+});
+
 // Validation scenarios
 const testScenarios = [
     {
@@ -33,8 +53,8 @@ const testScenarios = [
             pkColumnName: 'id',
             pkIsGenerated: true,
             fields: [
-                { name: 'name', type: 'String' },
-                { name: 'email', type: 'String' }
+                { name: 'name', type: 'String', maxLength: 100 },
+                { name: 'email', type: 'String', maxLength: 255 }
             ]
         }
     },
@@ -54,8 +74,8 @@ const testScenarios = [
             pkColumnName: 'id',
             pkIsGenerated: true,
             fields: [
-                { name: 'name', type: 'String' },
-                { name: 'email', type: 'String' }
+                { name: 'name', type: 'String', maxLength: 100 },
+                { name: 'email', type: 'String', maxLength: 255 }
             ]
         }
     },
@@ -75,8 +95,8 @@ const testScenarios = [
             pkColumnName: 'ProposalStatusTypeMappingId',
             pkIsGenerated: true,
             fields: [
-                { name: 'name', type: 'String' },
-                { name: 'description', type: 'String' }
+                { name: 'name', type: 'String', maxLength: 100 },
+                { name: 'description', type: 'String', maxLength: 500 }
             ]
         }
     }
@@ -163,7 +183,7 @@ function validateTemplate(scenario) {
             .map(m => m[1].trim().split(/\s+/)[0]);
         
         const uniqueVars = [...new Set(templateVars)]
-            .filter(v => !['camelCase', 'pascalCase', 'eq', 'if', 'else', 'each', 'name', 'type'].includes(v)); // Filter out Handlebars helpers and field properties
+            .filter(v => !['camelCase', 'pascalCase', 'eq', 'if', 'else', 'each', 'name', 'type', 'startsWith', 'testString'].includes(v)); // Filter out Handlebars helpers and field properties
         
         const dataKeys = Object.keys(scenario.data);
         
